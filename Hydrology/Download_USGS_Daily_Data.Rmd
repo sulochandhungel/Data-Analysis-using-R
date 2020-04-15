@@ -1,0 +1,32 @@
+Download USGS data 
+
+```{r}
+ 
+  getData=function(stano) {
+    url_link = paste ("http://waterdata.usgs.gov/nwis/dv?referred_module=sw&search_site_no=",
+                      stano,
+                      "&search_site_no_match_type=anywhere&site_tp_cd=ST&index_pmcode_00060=1&sort_key=site_no&group_key=NONE&sitefile_output_format=html_table&column_name=agency_cd&column_name=site_no&column_name=station_nm&range_selection=date_range&begin_date=1889-01-01&end_date=2012-10-06&format=rdb&date_format=MM/DD/YYYY&rdb_compression=value&list_of_search_criteria=search_site_no%2Csite_tp_cd%2Crealtime_parameter_selection",
+                      sep="")
+    tt = url(url_link,open="rb")
+    tt2 = readLines(tt)
+    chk_ctr=23
+    chk_char=""
+    while (chk_char!="USGS") {
+      tt = url(url_link,open="rb")
+      tt2 = readLines(tt)
+      junk_arr1=read.table(text = tt2, skip =(chk_ctr), flush=T, fill=T)
+      chk_char=as.character(junk_arr1[1,1])
+      chk_ctr=chk_ctr+1
+    }
+    chk_ctr=chk_ctr-1
+    
+    data1 = read.table(text = tt2,skip = chk_ctr,
+                       flush=TRUE,fill=T)
+    getData=data1
+  }
+  
+  stano = "14243500"
+  tt = getData(stano)
+  head(tt)
+```
+
