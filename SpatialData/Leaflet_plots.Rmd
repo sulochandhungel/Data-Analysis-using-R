@@ -1,0 +1,54 @@
+---
+title: "R Notebook for using Leaflet" 
+output: html_notebook
+---
+
+
+```{r}
+library(raster)
+library(leaflet)
+
+rast = raster("C:/Users/Sulochan Dhungel/Sulochan/R codes/Useful R codes/Spatial Plots/Leaflet/Files/G.tif")
+plot(rast)
+
+RasVarName = "G"
+varUnits = "W/m2"
+site_name = "US_Tw3"
+
+
+x_ = mean(c(extent(rast)@xmin, extent(rast)@xmax))
+y_ = mean(c(extent(rast)@ymin, extent(rast)@ymax))
+nExtent = 1000
+
+coords_prj = data.frame(x_,y_)
+coordinates(coords_prj) = c("x_", "y_") 
+  
+
+proj4string(coords_prj) <- proj4string(rast) #CRS("+init=epsg:4326") # WGS 84
+
+coords_latlon = spTransform(coords_prj, CRS("+init=epsg:4326"))
+
+coord_extent = extent(coords_prj)
+coord_extent_buff_1000_m = extent(coord_extent@xmin-nExtent, 
+                                 coord_extent@xmax+nExtent,
+                                 coord_extent@ymin-nExtent,
+                                 coord_extent@ymax+nExtent)
+ras = crop(rast, coord_extent_buff_1000_m)
+plot(ras)
+
+RasValueAtPt = signif(extract(ras, coords_prj),digits = 3)
+
+colpal <- colorNumeric(palette = "Spectral", values(ras), na.color = "transparent")
+val_ras = values(ras)[!is.na(values(ras))]
+
+  leaflet(width = "100%") %>% 
+    addProviderTiles(providers$Esri.WorldStreetMap, group = "ESRI Street Map")%>%
+    addTiles(urlTemplate = "https://mts1.google.com/vt/lyrs=y&hl=en&src=app&x={x}&y={y}&z={z}&s=G", attribution = 'Google', group = "GoogleMap") %>%
+    addRasterImage(ras, col = colpal, group = RasVarName) %>%
+    addCircleMarkers(data = coords_latlon, label = site_name,  labelOptions = labelOptions(noHide = T, textsize = "15px", textOnly = T),  radius = 5 , weight = 5, fillOpacity = 2, stroke = T, col = "black", popup = paste(RasVarName," = ", RasValueAtPt ," ", varUnits, sep="")) %>%
+    addLegend(values = val_ras, pal = colpal, title = paste(RasVarName,"<br>",varUnits,"<br>",sep=""), opacity = 1)%>%
+    addLayersControl(
+      overlayGroups = c("ESRI Street Map", RasVarName))
+
+```
+
