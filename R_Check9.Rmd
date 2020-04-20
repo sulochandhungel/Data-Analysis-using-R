@@ -1,0 +1,2303 @@
+---
+title: "Paper 1 Output"
+output: html_notebook
+---
+
+This is a notebook for producing outputs for Paper 1 
+```{r}
+pdf.options(family = 'Times')
+## FUNCTION TO INTERPOLATE FROM Amflux Site for a list of dates
+Interp_from_AmFlux = function(datetimes,AmFlux_data, what_to_interp = 'LE'){
+  find_nearest_DateTime = function (DT, list_of_DTs){
+    
+    min_DT1 = list_of_DTs[which((as.numeric(list_of_DTs - DT))^2 == sort((as.numeric(list_of_DTs - DT))^2)[1])]
+    min_DT2 = list_of_DTs[which((as.numeric(list_of_DTs - DT))^2 == sort((as.numeric(list_of_DTs - DT))^2)[2])]
+    
+    
+    
+    if (order(c(min_DT1, min_DT2))[1]==2){
+      return(list(min_DT2, min_DT1))
+    } else {
+      return(list(min_DT1, min_DT2))
+    }
+  }
+  
+  # Interpolate data from Amflux site at these date times
+  #imgDT = all_data_dates[1]
+  
+  AmFlux_data[AmFlux_data == -9999] = NA
+  dt = strptime(as.character(AmFlux_data$TIMESTAMP_START), "%Y%m%d%H%M", tz = "US/Pacific")
+  AmFlux_interp = c()
+  #what_to_interp = 'LE'
+  for (i in 1:length(all_data_dates)){
+    
+    imgDT = all_data_dates[i]
+    #print (imgDT)
+    sel_date_entire_hrs_ind = which(as.Date(imgDT) == as.Date(dt))
+    list_of_DTs = dt[sel_date_entire_hrs_ind]
+    
+    DT_for_interp = c(find_nearest_DateTime(imgDT, list_of_DTs)[[1]], find_nearest_DateTime(imgDT, list_of_DTs)[[2]])
+    DT_for_interp_ind = match(c(DT_for_interp), c(list_of_DTs))
+    
+    AmFlux_var_vals = AmFlux_data[,what_to_interp]  ### CHANGE THIS TO INTERPOLATE SOMETHING ELSE
+    AmFlux_vals_for_DT_interp = AmFlux_var_vals[sel_date_entire_hrs_ind][DT_for_interp_ind]
+      
+    if (length(which(is.na(AmFlux_vals_for_DT_interp) == T))!=2){
+      AmFlux_Interpolated_val = approx(x = as.numeric(DT_for_interp), y = AmFlux_vals_for_DT_interp, xout = as.numeric(imgDT))  
+      AmFlux_Interpolated_val_y = AmFlux_Interpolated_val$y
+    } else {
+      AmFlux_Interpolated_val_y = NA
+    }
+    AmFlux_interp = c(AmFlux_interp, AmFlux_Interpolated_val_y)
+  }
+  return (AmFlux_interp)
+}
+
+R2 = function (predict, actual){return ((cor(predict, actual, use = 'na.or.complete'))^2)}
+```
+
+
+```{r}
+setwd('C:/Users/Sulochan/Google Drive/US_Tw3 Validation/R_Stuff')
+data2013 = read.csv('Full_Validation_df_Sacramento140_US_Tw3_2013.csv')
+  # Dates to be removed from data
+  # 1 = 2013-04-08
+  # 2 = 2013-04-09
+  # 3 = 2013-04-16
+  # 4 = 2013-05-10
+  # 7 = 2013-06-27
+  #
+  
+  rem_ind = c(1,2,3,4,7)
+  
+  data2013 = data2013[-rem_ind,]
+
+data2014 = read.csv('Full_Validation_df_Sacramento140_US_Tw3_2014.csv')
+  # Dates to be removed from data
+  # 1 = 2014-04-03
+  # 3 = 2014-05-13
+  # 4 = 2014-05-21
+  # 5 = 2014-05-29
+  # 9 = 2014-06-30
+  # 12 = 2014-08-17
+  # 14 = 2014-09-10
+  # 17 = 2014-10-28
+  
+  #rem_ind = c(1,3,5,9,14,17)
+  rem_ind = c(1,3,4,5,9,12,14,17)
+
+  data2014 = data2014[-rem_ind,]
+
+data2015 = read.csv('Full_Validation_df_Sacramento140_US_Tw3_2015.csv')
+
+
+```
+
+```{r}
+## Remove some of the column names which are specific to the year (e.g. 'Crop2013','Crop2014', 'Crop2015') so that
+## the three dataframes can be row-binded
+
+xx = Reduce(intersect, list(names(data2013), names(data2014), names(data2015)))
+data2013 = data2013[xx]
+data2014 = data2014[xx]
+data2015 = data2015[xx]
+
+all_data = rbind(data2013, data2014, data2015)
+all_data_dates = strptime(levels(factor(all_data$Date))[factor(all_data$Date)], '%Y-%m-%d %H:%M:%S')
+```
+
+```{r}
+corr_LE_2013 = read.csv('corr_fac2013.csv')
+corr_LE_2014 = read.csv('corr_fac2014.csv')
+corr_LE_2015 = read.csv('corr_fac2015.csv')
+
+all_corr_LE = rbind(corr_LE_2013, corr_LE_2014, corr_LE_2015)
+```
+
+
+
+```{r}
+use_year = FALSE
+if (use_year){
+  all_data = data2015
+  all_corr_LE = corr_LE_2015
+  data_year = '2015'
+}
+
+all_data_dates = strptime(levels(factor(all_data$Date))[factor(all_data$Date)], '%Y-%m-%d %H:%M:%S')
+```
+
+```{r}
+Amflux_file_name = 'C:/Users/Sulochan/Google Drive/AmeriFlux_Data/AMF_US-Tw3_BASE-BADM_4-1/AMF_US-Tw3_BASE_HH_4-1.csv'
+AmFlux_data = read.csv(Amflux_file_name, skip=2)
+dt = strptime(as.character(AmFlux_data$TIMESTAMP_START), "%Y%m%d%H%M", tz = "US/Pacific")
+
+if (use_year){
+  specific_year_ind = which(format(dt, '%Y') == data_year)
+  AmFlux_data = AmFlux_data[specific_year_ind,]
+}
+
+ind_rad_terms_NA = (AmFlux_data$NETRAD == -9999 | 
+                    AmFlux_data$G == -9999 | 
+                      AmFlux_data$H == -9999 | 
+                      AmFlux_data$LE == -9999)
+
+AmFlux_data[ind_rad_terms_NA, 3:dim(AmFlux_data)[2]] = NA
+dt = strptime(as.character(AmFlux_data$TIMESTAMP_START), "%Y%m%d%H%M", tz = "US/Pacific")
+```
+
+```{r}
+# THIS FILE IS FROM FLUXNET WITH CORRECTED LE (DOESNT SEEM TO GIVE CORRECT ANSWERS)
+if (FALSE){
+  Amflux_file_name_corr = 'C:/Users/Sulochan/Google Drive/PhD/Papers/Flux Data analysis/analysis/From_FluxNET/FLX_US-Tw3_FLUXNET2015_FULLSET_HH_2013-2014_2-3.csv'
+
+  AmFlux_data_corr = read.csv(Amflux_file_name_corr, skip=0)
+  dt = strptime(as.character(AmFlux_data_corr$TIMESTAMP_START), "%Y%m%d%H%M", tz = "US/Pacific")
+  if (use_year){
+    specific_year_ind = which(format(dt, '%Y') == data_year)
+    AmFlux_data_corr = AmFlux_data_corr[specific_year_ind,]
+  }
+
+  AmFlux_data[which(AmFlux_data == -9999),3:dim(AmFlux_data)[2]] = NA
+  dt = strptime(as.character(AmFlux_data_corr$TIMESTAMP_START), "%Y%m%d%H%M", tz = "US/Pacific")
+}
+```
+
+```{r}
+# Correction based on Reichstein et al 2005 and Fluxnet processing of data
+# Use "AmFlux_data_corr" for correction
+AmFlux_data_corr = AmFlux_data
+AmFlux_data_corr[which(AmFlux_data_corr$NETRAD<20),3:dim(AmFlux_data_corr)[2]] = NA
+corr_fac = (AmFlux_data_corr$NETRAD - AmFlux_data_corr$G)/(AmFlux_data_corr$H + AmFlux_data_corr$LE)
+corr_fac[which(is.infinite(corr_fac))] = NA
+
+corr_fac_IQR_range = c(quantile(corr_fac, na.rm = T, probs = c(0.5)) - IQR(corr_fac, na.rm = T),
+                      quantile(corr_fac, na.rm = T, probs = c(0.5)) + IQR(corr_fac, na.rm = T))
+corr_fac_IQR_ind = which(corr_fac>corr_fac_IQR_range[1] & corr_fac<corr_fac_IQR_range[2])
+
+corr_fac1 = rep(NA, length(corr_fac))
+corr_fac1[corr_fac_IQR_ind] = corr_fac[corr_fac_IQR_ind]
+
+boxplot(corr_fac1, na.rm =T)
+if (!exists('data_year')){
+  data_year = '2015'
+}
+st_date_for_axis = as.POSIXct(strptime(paste(data_year, '-05-12 00:00', sep=''), "%Y-%m-%d %H:%M", tz = "US/Pacific"))
+en_date_for_axis = as.POSIXct(strptime(paste(data_year, '-06-14 00:00', sep=''), "%Y-%m-%d %H:%M", tz = "US/Pacific"))
+dt2 = strptime(as.character(AmFlux_data$TIMESTAMP_START), "%Y%m%d%H%M", tz = "US/Pacific")
+plot(dt2, corr_fac1, 'b', xlim = c(st_date_for_axis, en_date_for_axis), cex = 0.5)
+grid()
+
+corr_facs_with_NAs = rep(NA, length(dt)) 
+corr_facs_with_NAs[match(dt[corr_fac_IQR_ind], dt)] = corr_fac[corr_fac_IQR_ind]
+
+find_15_day_avg = function(data_dates, vals, st_date){
+  en_date = st_date + 15*24*60*60
+  sel_vals = vals[which(data_dates >= st_date & data_dates < en_date)]
+  
+  #print (data_dates[which(data_dates >= st_date & data_dates < en_date)])
+  #print (vals[which(data_dates >= st_date & data_dates < en_date)])
+  #print (st_date)
+  if (length(!is.na(sel_vals))>5){
+    return (mean(sel_vals,na.rm=T))
+  } else {
+    #print (st_date)
+    print (length(!is.na(sel_vals)))
+    return (NA)  
+  }
+}
+  
+corr_needed = FALSE
+if (corr_needed){
+  day_avgs_15 = rep(NA, length(dt))
+  prev_day = '00'
+  for (i in 1:(length(dt))){
+    #for (i in 1:500){
+    xx = find_15_day_avg(dt, corr_facs_with_NAs, dt[i]) 
+    if (format(dt[i], '%d') != prev_day) {
+      print (dt[i])
+      prev_day = format(dt[i], '%d')
+    } 
+    day_avgs_15[i] = xx
+  }
+  corr_fac_df = data.frame(dt, day_avgs_15)
+  colnames(corr_fac_df) = c("Date", "Corr_facs")
+  #write.csv(corr_fac_df, file = 'C:/Users/Sulochan/Desktop/corr_fac2014_netrad_lt_50.csv')
+}
+```
+
+```{r}
+# Correction factor to be used 
+corr_fac_vec = all_corr_LE$Corr_facs
+LE_corr =  AmFlux_data_corr$LE * corr_fac_vec
+H_corr =  AmFlux_data_corr$H * corr_fac_vec
+
+#which(is.na(day_avgs_15))
+AmFlux_data_corr2 = cbind(AmFlux_data_corr, LE_corr, H_corr)
+
+LE_interp2 = c('LE_interp' = Interp_from_AmFlux(all_data_dates, AmFlux_data_corr2, 'LE_corr'))
+H_interp2 = c('H_interp' = Interp_from_AmFlux(all_data_dates, AmFlux_data_corr2, 'H_corr'))
+
+#boxplot(corr_fac)
+#quantile(corr_fac, na.rm = T)
+```
+
+```{r}
+## GET daily TOTAL LE from the corrected LE
+## Are there any NA in date times? Some of them are there due to Daylight saving not being incorporated well
+all_corr_LE = all_corr_LE[which(!is.na(all_corr_LE$Date)),]
+
+#There are NA values
+
+# If these are due to Daylight savings, I will change it to what original Amflux data had as start times
+dt2 = strptime(as.character(AmFlux_data_corr$TIMESTAMP_START), "%Y%m%d%H%M", tz = "US/Pacific")
+AmFlux_data_corr = AmFlux_data_corr[!is.na(dt2),]
+
+
+# Replacing NA values is hard if they are as factors or dates. So, I will convert them to string and replace them with what AmFlux dates has. Then convert it all to dates
+all_corr_LE$Date = levels(factor(all_corr_LE$Date))[factor(all_corr_LE$Date)]
+all_corr_LE = all_corr_LE[which(!is.na(all_corr_LE$Date)),]
+
+LE_corr =  AmFlux_data_corr$LE * all_corr_LE$Corr_facs
+AmFlux_temp = AmFlux_data_corr$TA
+
+all_corr_LE$Date = strptime(levels(factor(all_corr_LE$Date))[factor(all_corr_LE$Date)], '%Y-%m-%d %H:%M:%S', tz = "US/Pacific")
+
+all_corr_LE2 = cbind(all_corr_LE, LE_corr, AmFlux_temp)
+
+lamda_at_Amflux = (2.501 - (0.00236 * all_corr_LE2$AmFlux_temp))*1e6
+ET_at_Amflux = all_corr_LE2$LE_corr * 3600 * 0.5 * 1000 / (1000 * lamda_at_Amflux) 
+
+ET_at_Amflux_uncorr = AmFlux_data_corr$LE * 3600 * 0.5 * 1000 / (1000 * lamda_at_Amflux) 
+
+all_corr_LE2 = cbind(all_corr_LE2, ET_at_Amflux, ET_at_Amflux_uncorr)
+all_corr_LE2[which(all_corr_LE2$LE_corr<0),]
+
+#all_corr_LE2[which(all_corr_LE2$LE_corr<0),4] = NA
+all_corr_LE2 = cbind(all_corr_LE2, DateTime = all_corr_LE2$Date)
+all_corr_LE2$Date = strptime(all_corr_LE2$DateTime, '%Y-%m-%d', tz = "US/Pacific")
+
+AmFlux_data_corr = cbind(AmFlux_data_corr, LE_corr)
+```
+
+
+```{r}
+my_str = 'LE_closest_at_Loc_Buffer'
+
+x = all_data[my_str][,1]
+x_lab = 'Flux Tower data'
+
+# Make a data frame of all relevant data for the image datetime from AmFlux data
+LE_interp2 = c('LE_interp' = Interp_from_AmFlux(all_data_dates,AmFlux_data_corr, 'LE_corr'))
+
+
+all_data_dates1 = all_data_dates
+
+
+LE_interp = c('LE_interp' = Interp_from_AmFlux(all_data_dates,AmFlux_data_corr, 'LE'))
+plot(all_data_dates1, LE_interp, 'b', ylim = c(0, 600), col = 'lightgray')
+lines(all_data_dates1, LE_interp, 'b', col = 'red')
+lines(all_data_dates1, x, 'b', col = 'blue' )
+grid()
+mtext('LE',side = 3, line = 1, adj = 1)
+
+plot(x, LE_interp, xlab = x_lab, ylab = 'LE', main = signif(R2(x, LE_interp),4), ylim = c(0, 600), xlim = c(0, 600))
+abline(0,1)
+grid()
+mtext('LE',side = 3, line = 1, adj = 1)
+
+
+plot(all_data_dates1, LE_interp2, 'b', ylim = c(0, 600), col = 'lightgray')
+#plot(all_data_dates1, LE_interp, 'b', ylim = c(0, 600), col = 'black')
+lines(all_data_dates1, LE_interp2, 'b', col = 'red')
+lines(all_data_dates1, x, 'b', col = 'blue' )
+grid()
+mtext('Corrected LE',side = 3, line = 1, adj = 1)
+
+plot(x, LE_interp2, xlab = x_lab, ylab = 'Corr LE', main = signif(R2(x, LE_interp2),4), ylim = c(0, 600), xlim = c(0, 600))
+abline(0,1)
+grid()
+mtext('Corrected LE',side = 3, line = 1, adj = 1)
+
+
+
+```
+
+
+```{r}
+
+daily_sum_ET = aggregate(x= all_corr_LE2['ET_at_Amflux'],
+                         by = list(as.Date(all_corr_LE2$Date)),
+                         FUN = sum, na.rm = TRUE)
+
+daily_sum_ET_uncorr = aggregate(x= all_corr_LE2['ET_at_Amflux_uncorr'],
+                         by = list(as.Date(all_corr_LE2$Date)),
+                         FUN = sum, na.rm = TRUE)
+
+daily_sum_ET = cbind(daily_sum_ET, daily_sum_ET_uncorr$ET_at_Amflux_uncorr)
+colnames(daily_sum_ET) = c('Date', 'ET_daily', 'ET_daily_uncorr')
+
+
+#daily_sum_LE = aggregate(x= all_corr_LE2['LE_corr'],
+#                         by = list(as.Date(all_corr_LE2$Date)),
+#                         FUN = sum, na.rm = TRUE)
+
+#daily_temp = aggregate(x= all_corr_LE2['AmFlux_temp'],
+#                         by = list(as.Date(all_corr_LE2$Date)),
+#                         FUN = mean, na.rm = TRUE)
+
+
+#daily_sum_LE = cbind(daily_sum_LE, daily_temp$AmFlux_temp)
+#colnames(daily_sum_LE) = c('Date', 'LE_sum', 'Temp')
+
+data_dates = as.Date(format(all_data_dates, "%Y-%m-%d"))
+
+sel_data = daily_sum_ET[match(data_dates, daily_sum_ET$Date),]
+#sel_data = daily_sum_LE[match(data_dates, daily_sum_LE$Date),]
+
+#lamda_at_Amflux = (2.501 - (0.00236 * sel_data$Temp))*1e6
+#ET_at_Amflux = sel_data$LE_sum * 3600 * 0.5 * 1000 / (1000 * lamda_at_Amflux) 
+#print (ET_at_Amflux)
+
+my_str = 'ET24_closest_at_Loc_Buffer'
+METRIC_ET_24 = all_data[my_str][,1]
+
+sel_data = cbind(sel_data, METRIC_ET_24)
+plot(sel_data$ET_daily, sel_data$METRIC_ET_24, ylim = c(0,8), xlim = c(0,8),
+     main = signif(R2(predict = sel_data$METRIC_ET_24, actual = sel_data$ET_daily),3),
+     xlab = 'AmFlux', ylab = 'METRIC')
+abline(0,1)
+grid()
+mtext('ET24',side = 3, line = 1, adj = 1)
+
+
+
+plot(sel_data$Date, sel_data$ET_daily, lwd =1 , 'l', ylim = c(0,8), col = 'blue', axes = F,
+     xlab = '', ylab = 'ET(mm/day)')
+points(sel_data$Date, sel_data$ET_daily_uncorr, lwd =1, 'l', col = 'green')
+points(sel_data$Date, sel_data$ET_daily_uncorr, lwd =1 , 'p', col = 'green')
+axis(2)
+box()
+
+points(sel_data$Date, sel_data$METRIC_ET_24, lwd = 1 , 'l', col = 'red')
+points(daily_sum_ET$Date, daily_sum_ET$ET_daily, col = 'gray', cex = 0.2, lwd = 1, 'l')
+
+points(sel_data$Date, sel_data$ET_daily, lwd =1 , 'p', col = 'blue')
+points(sel_data$Date, sel_data$METRIC_ET_24, lwd = 1 , 'p', col = 'red')
+
+axis(1, at = sel_data$Date, labels = sel_data$Date, las = 2)
+abline(v = sel_data$Date, col = 'gray', lty = 2)
+abline(h = seq(0,8,1), col = 'gray', lty = 2)
+abline(h = seq(0,8,2), col = 'gray', lty = 1)
+legend(sel_data$Date[1], 8, c('METRIC','AmFlux', 'Amflux_uncorr'), col = c('red', 'blue', 'green'), lty = c(1,1,1), pch = c(1,1,1))
+
+```
+
+```{r}
+#pdf('Daily_Amflux_for_METRIC_dates.pdf')
+for (i in sel_data$Date){
+  plot_ind = which(as.Date(all_corr_LE2$Date) == i)
+  plot(all_corr_LE2$DateTime[plot_ind], all_corr_LE2$ET_at_Amflux[plot_ind], 'b', ylim = c(0, 0.5),
+       axes = F,
+       xlim = c(head(all_corr_LE2$DateTime[plot_ind])[1], tail(all_corr_LE2$DateTime[plot_ind])[1]),
+       xlab = "", ylab = "ET (mm/hr)",
+       main = paste(sel_data$Date[which(i == sel_data$Date)], '  (n = ', length(which(is.na(all_corr_LE2$ET_at_Amflux[plot_ind]))), ')', sep= ''))
+  axis(2)
+  box()
+  axis(1, at  = seq(head(all_corr_LE2$DateTime[plot_ind])[1], tail(all_corr_LE2$DateTime[plot_ind])[1], 2*60*60),
+       labels = format(seq(head(all_corr_LE2$DateTime[plot_ind])[1], tail(all_corr_LE2$DateTime[plot_ind])[1], 2*60*60), '%H:%M'),
+       las = 2)
+  abline(v = seq(head(all_corr_LE2$DateTime[plot_ind])[1], tail(all_corr_LE2$DateTime[plot_ind])[1], 2*60*60),
+                 col = 'lightgray', lty = 2)
+  abline(h = seq(0,0.5, 0.05), col = 'lightgray', lty = 2)
+}
+#dev.off()
+
+```
+
+
+```{r}
+## Remove all data with less than -2mm METRIC ET
+ET_val_to_be_removed = 0
+ind = c()
+
+ind = c(ind, which(all_data$ET24_closest_at_Loc_Buffer < ET_val_to_be_removed))
+ind = c(ind, which(all_data$ET24_Min_Min_at_Loc_Buffer < ET_val_to_be_removed))
+ind = c(ind, which(all_data$ET24_Max_Max_at_Loc_Buffer < ET_val_to_be_removed))
+ind = c(ind, which(all_data$ET24_Max_cold_Min_hot_at_Loc_Buffer < ET_val_to_be_removed))
+ind = c(ind, which(all_data$ET24_Max_hot_Min_cold_at_Loc_Buffer < ET_val_to_be_removed))
+
+backup_data = all_data
+```
+
+
+
+
+```{r fig1, fig.height = 5, fig.width = 12}
+#backup_data = backup_data[-c(28),]
+data_dates = strptime(levels(factor(backup_data$Date))[factor(backup_data$Date)], '%Y-%m-%d %H:%M:%S')
+if (FALSE){
+  yrs = format(data_dates, '%Y')
+  sel_yrs_ind = which(yrs==data_year)
+  #sel_yrs_ind = sel_yrs_ind[which(sel_yrs_ind != 28)]
+  all_data = backup_data[sel_yrs_ind,]
+}
+
+data_dates = strptime(levels(factor(all_data$Date))[factor(all_data$Date)], '%Y-%m-%d %H:%M:%S')
+
+
+my_str = 'LE_closest_at_Loc_Buffer'
+
+x = all_data[my_str][,1]
+x_lab = 'Flux Tower data'
+y = LE_interp
+y_lab = 'LE_interp'
+
+plot(data_dates, x, 'b', xlab = 'Date', ylab = my_str, axes = F, ylim = c(0,700))
+axis(1, as.POSIXct(data_dates), format(data_dates, '%Y-%m-%d'), las =2)
+axis(2)
+abline(v = as.POSIXct(data_dates), lty = 2, lwd =2, col ='lightgray')
+box()
+
+#lines(data_dates, LE_interp, col= ' red')
+lines(data_dates, y, col= ' blue', type = 'b')
+#lines(data_dates, LE_closure, col= ' green')
+
+grid()
+
+plot(x, y, ylim = c(0,700), xlim = c(0,700), xlab = x_lab, ylab = y_lab)
+abline(0,1)
+grid()
+mtext(side = 3, signif(R2(y, x), 3))
+
+
+
+
+```
+
+```{r}
+valid_df_data = data2013
+getdtandET = function(valid_df_data){
+  dt_str = levels(valid_df_data$Date)[valid_df_data$Date]
+  mydate = strptime(dt_str, '%Y-%m-%d %H:%M:%S', tz = 'US/Pacific')
+  myET = valid_df_data$ET24_closest_at_Loc_Buffer
+  return (list(mydate, myET))
+}
+
+getET_others = function(valid_df_data){
+  
+  myET_minmin = valid_df_data$ET24_Min_Min_at_Loc_Buffer
+  myET_maxmax = valid_df_data$ET24_Max_Max_at_Loc_Buffer
+  myET_maxmin = valid_df_data$ET24_Max_cold_Min_hot_at_Loc_Buffer
+  myET_minmax = valid_df_data$ET24_Max_hot_Min_cold_at_Loc_Buffer
+
+    
+  return (list(myET_minmin, myET_maxmax, myET_maxmin, myET_minmax))
+}
+
+mydate2013 = getdtandET(data2013)[[1]]
+mydate2014 = getdtandET(data2014)[[1]]
+mydate2015 = getdtandET(data2015)[[1]]
+
+myET2013 = getdtandET(data2013)[[2]]
+myET2014 = getdtandET(data2014)[[2]]
+myET2015 = getdtandET(data2015)[[2]]
+
+dates = c(mydate2013, mydate2014, mydate2015)
+METRIC_ETs = c(myET2013, myET2014, myET2015)
+
+METRIC_ETs_minmin = c(getET_others(data2013)[[1]], getET_others(data2014)[[1]], getET_others(data2015)[[1]])
+
+METRIC_ETs_maxmax = c(getET_others(data2013)[[2]], getET_others(data2014)[[2]], getET_others(data2015)[[2]])
+
+METRIC_ETs_maxmin = c(getET_others(data2013)[[3]], getET_others(data2014)[[3]], getET_others(data2015)[[3]])
+
+METRIC_ETs_minmax = c(getET_others(data2013)[[4]], getET_others(data2014)[[4]], getET_others(data2015)[[4]])
+
+METRIC_ETs[METRIC_ETs < -2] = NA
+
+```
+
+
+
+```{r}
+
+data_from_df = function(x, data1 = data2013, data2 = data2014, data3 = data2015){
+  
+  x2013 = levels(factor(data1[x][,1]))[factor(data1[x][,1])]
+  x2014 = levels(factor(data2[x][,1]))[factor(data2[x][,1])]
+  x2015 = levels(factor(data3[x][,1]))[factor(data3[x][,1])]
+  
+  x_s = c(x2013, x2014, x2015)
+  return (x_s)
+}
+
+all_rawids = data_from_df('raw_id')
+all_selAreaCldCov = data_from_df("SelArea_CldCov")
+all_rawids
+all_selAreaCldCov
+result_df = data.frame(all_rawids, all_selAreaCldCov)
+#write.csv(result_df, 'raw_ids.csv')
+```
+
+```{r}
+
+d2014 = function(x, data1 = data2014){
+  
+  x2014 = levels(factor(data1[x][,1]))[factor(data1[x][,1])]
+  return (x2014)
+}
+dt_img = strptime(d2014('Date', data1 = data2015), format = '%Y-%m-%d %H:%M:%S')
+print (dt_img)
+
+mos = format(dt_img, '%m')
+das = format(dt_img, '%d')
+
+AmFlux_data = read.csv('C:/Users/Sulochan/Google Drive/AmeriFlux_Data/AMF_US-Tw3_BASE-BADM_4-1/AMF_US-Tw3_BASE_HH_4-1.csv',skip=2)
+AmFlux_data[AmFlux_data == -9999] = NA
+dt = strptime(as.character(AmFlux_data$TIMESTAMP_START), "%Y%m%d%H%M", tz = "US/Pacific")
+for (i in 1:length(mos)){
+#for (i in c(11, 13, 15, 16, 17)){ # FOR 2015
+#for (i in c(7, 8, 10, 13, 14)){ # FOR 2014
+  
+  date1 = strptime(c(paste('2015',mos[i],das[i],'0800',sep='')), "%Y%m%d%H%M", tz = "US/Pacific")
+  date2 = strptime(c(paste('2015',mos[i],das[i],'2000',sep='')), "%Y%m%d%H%M", tz = "US/Pacific")
+
+  ind = dt>=date1 & dt<=date2
+
+  print (which(ind))
+  
+  ind1 = AmFlux_data$LE<0
+  ind2 = AmFlux_data$LE==-9999
+  
+  if (length(which(ind1))>0) {
+    AmFlux_data[which(ind1),] = NA
+  }
+  if (length(which(ind2))>0) {
+    AmFlux_data[which(ind2),] = NA
+  }
+  
+  plot(dt[ind], AmFlux_data$LE[ind], 'b', main = dt_img[i], ylim = c(-100,600))
+  lines(dt[ind], AmFlux_data$H[ind], 'b', col = 'red')
+  
+  #Correction using bowen ratio
+  BR = AmFlux_data$H/AmFlux_data$LE
+  LE_corr_BR = (AmFlux_data$NETRAD - AmFlux_data$G)/(1 + BR)
+  
+  #lines(dt[ind], LE_corr_BR[ind], 'b', col = 'green',lwd=2)
+  lines(dt[ind], AmFlux_data$NETRAD[ind] - AmFlux_data$G[ind] - AmFlux_data$H[ind], col = 'lightblue', yaxt = 'n', type = 'b',lwd = 2, ylab = '')
+  
+  
+  
+  par(new = T)
+  
+  if (!all(is.na(AmFlux_data$WS[ind]))){
+    plot(dt[ind], AmFlux_data$P[ind], col = 'blue', yaxt = 'n', type = 'b', lwd = 2, ylab ='', ylim = c(0,10))  
+  }
+  
+  abline(h = 1)
+  
+  axis(4)
+  grid()
+  legend(dt[ind][7], 8, c('LE','H'), col = c('black', 'red'), lty = 1, pch =1 )
+  abline(v = as.POSIXct(dt[ind][13]))
+  abline(v = as.POSIXct(dt[ind][14]))
+  
+  
+}
+
+```
+
+
+
+```{r}
+#pdf('all_checks.pdf')
+d2014 = function(x, data1 = data2014){
+  
+  x2014 = levels(factor(data1[x][,1]))[factor(data1[x][,1])]
+  return (x2014)
+}
+dt = strptime(d2014('Date'), format = '%Y-%m-%d %H:%M:%S')
+dates_for_axis_start = strptime('2014-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2014-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+
+for (i in 10:12){
+  varname = names(data2014)[i]
+  print (varname)
+  var = as.numeric(d2014(varname))
+  print (var)
+  print (any(lapply(var, is.numeric)))
+  print (!all(is.na(var)))
+  
+  if (any(lapply(var, is.numeric)) & !all(is.na(var))){
+    plot(dt, var, 'b', main = varname,axes=F)
+    axis(2)
+    axis(1, dates_for_axis, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1.5)
+    grid(lwd=2)
+    box()
+  }
+  
+}
+#dev.off()
+ 
+
+
+
+```
+
+
+```{r}
+
+Amf_ETs = sel_data$ET_daily
+#write.csv(data.frame(dates, Amf_ETs), file = "G:/EE_METRIC_RESULTS_SACREMANTO140/Corr_ET24_Amflux_data.csv")
+FullET_df = data.frame(dates, METRIC_ETs, Amf_ETs, METRIC_ETs_minmin, METRIC_ETs_maxmax, METRIC_ETs_maxmin, METRIC_ETs_minmax)
+
+dates1 = strptime(c('2013-12-31 00:00:01', '2014-12-31 00:00:01', '2015-12-31 00:00:01'), '%Y-%m-%d %H:%M:%S', tz = 'US/Pacific')
+added_df1 = data.frame(dates1, rep(NA,3), rep(NA,3), rep(NA,3), rep(NA,3), rep(NA,3), rep(NA,3))
+colnames(added_df1) = colnames(FullET_df)
+FullET_df_for_TS = rbind(FullET_df, added_df1)
+FullET_df_for_TS = FullET_df_for_TS[order(FullET_df_for_TS$dates),]
+
+```
+
+```{r}
+## 
+##
+
+start_2013 = strptime('2013-01-01','%Y-%m-%d', tz = 'US/Pacific')
+start_2014 = strptime('2014-01-01','%Y-%m-%d', tz = 'US/Pacific')
+start_2015 = strptime('2015-01-01','%Y-%m-%d', tz = 'US/Pacific')
+
+end_2013 = strptime('2013-12-31','%Y-%m-%d', tz = 'US/Pacific')
+end_2014 = strptime('2014-12-31','%Y-%m-%d', tz = 'US/Pacific')
+end_2015 = strptime('2015-12-31','%Y-%m-%d', tz = 'US/Pacific')
+
+ind2013 = FullET_df_for_TS $dates > start_2013 & FullET_df_for_TS $dates < end_2013
+ind2014 = FullET_df_for_TS $dates > start_2014 & FullET_df_for_TS $dates < end_2014
+ind2015 = FullET_df_for_TS $dates > start_2015 & FullET_df_for_TS $dates < end_2015
+
+
+dates_for_axis_start = strptime('2013-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2013-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+
+
+#pdf("figure1_lines_CLOSEST_only_.pdf", width = 12, height = 6)
+op <- par(no.readonly = TRUE)
+par (oma = c(1,4,1,1))
+
+layout(matrix(c(1,2,3), 1, 3, byrow = TRUE))
+par(mai = c(1.2,0.5,0.2,0.1))
+plot(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $METRIC_ETs[ind2013],'b',lwd = 2, ylim = c(-1, 9), xlab = '', ylab = '',axes = F)
+lines(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $Amf_ETs[ind2013],'b',col = 'red', lwd = 2 )
+#lines(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $METRIC_ETs_minmin[ind2013],'b',col = 'darkgray', lwd = 2, pch =24)
+
+
+
+dates_for_axis_start = strptime('2013-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2013-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, dates_for_axis, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 2)
+
+#axis(1, FullET_df_for_TS$dates[ind2013][c(1,3,6,8,11, 14,16)], labels =  format(FullET_df_for_TS $dates[ind2013][c(1,3,6, 8,11,14,16)], '%m-%d'), las =2)
+axis(2, cex.axis = 3)
+box()
+abline(v = dates_for_axis, lty =2, col = 'lightgray')
+abline(h = c(0,2,4,6,8,10), lty =2, col = 'lightgray')
+mtext('2013', line = 7, side = 1, cex = 2)
+mtext('ET (mm)', line = 4, side = 2, cex = 2)
+
+
+par(mai = c(1.2,0.2,0.2,0.1))
+plot(FullET_df_for_TS $dates[ind2014],FullET_df_for_TS $METRIC_ETs[ind2014],'b',lwd = 2, ylim = c(-1, 9), axes = F, ylab = '', xlab = '')
+lines(FullET_df_for_TS $dates[ind2014],FullET_df_for_TS $Amf_ETs[ind2014],'b',col = 'red', lwd = 2 )
+dates_for_axis_start = strptime('2014-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2014-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, dates_for_axis, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 2)
+
+#axis(1, FullET_df_for_TS$dates[ind2014][c(1,5,8,9,11, 13,15)], labels =  format(FullET_df_for_TS $dates[ind2014][c(1,5,8, 9,11,13,15)], '%m-%d'), las =2)
+box()
+abline(v = dates_for_axis, lty =2, col = 'lightgray')
+abline(h = c(0,2,4,6,8,10), lty =2, col = 'lightgray')
+mtext('2014', line = 7, side = 1, cex = 2)
+
+plot(FullET_df_for_TS $dates[ind2015],FullET_df_for_TS $METRIC_ETs[ind2015],'b',lwd = 2, ylim = c(-1, 9), axes = F, ylab = '', xlab = '')
+lines(FullET_df_for_TS $dates[ind2015],FullET_df_for_TS $Amf_ETs[ind2015],'b',col = 'red', lwd = 2 )
+dates_for_axis_start = strptime('2015-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2015-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, dates_for_axis, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 2)
+
+#axis(1, FullET_df_for_TS$dates[ind2015][c(1,5,7, 10,13, 15,17)], labels =  format(FullET_df_for_TS $dates[ind2015][c(1,5,7, 10,13,15,17)], '%m-%d'), las =2)
+box()
+abline(v = dates_for_axis, lty =2, col = 'lightgray')
+abline(h = c(0,2,4,6,8,10), lty =2, col = 'lightgray')
+mtext('2015', line = 7, side = 1, cex = 2)
+legend('topright', legend = c('METRIC','Amflux'), col = c('black','red'), cex = 2, lwd = 2)
+#dev.off()
+```
+
+
+```{r}
+files_avail = TRUE
+if (files_avail){
+  mean_ET24s_df = read.csv('G:/EE_METRIC_RESULTS_SACREMANTO140/mean_ET24s_df.csv')[,2:7]
+  med_ET24s_df = read.csv('G:/EE_METRIC_RESULTS_SACREMANTO140/med_ET24s_df.csv')[,2:7]
+  sd_ET24s_df = read.csv('G:/EE_METRIC_RESULTS_SACREMANTO140/sd_ET24s_df.csv')[,2:7]
+  min_ET24s_df = read.csv('G:/EE_METRIC_RESULTS_SACREMANTO140/min_ET24s_df.csv')[,2:7]
+  max_ET24s_df = read.csv('G:/EE_METRIC_RESULTS_SACREMANTO140/max_ET24s_df.csv')[,2:7]
+  ImgDate = strptime(mean_ET24s_df$ImgDate, '%Y-%m-%d', tz = 'US/Pacific')
+} else {
+  library(raster)
+  
+  myyear = c('2013', '2014', '2015')
+  calib_sets = c('Min_Min','Max_Max','Max_hot_Min_cold', 'Max_cold_Min_hot','closest')
+  
+  
+  
+  for (calib in calib_sets){
+    min_ET24s = c()
+    max_ET24s = c()
+    
+    mean_ET24s = c()
+    sd_ET24s = c()
+  
+    median_ET24s = c()
+    mydates = c()
+    
+    for (year_ctr in myyear){
+      foldername = paste('G:/EE_METRIC_RESULTS_SACREMANTO140/',year_ctr,'/',calib,'/ET24',sep='')
+      setwd(foldername)
+      all_files = list.files(foldername)
+      for (file_name in all_files){
+        print (file_name)
+        #myyear = strsplit(file_name, '_')[[1]][2]
+        #mymonth = strsplit(file_name, '_')[[1]][3]
+        #myday = strsplit(file_name, '_')[[1]][4]
+        
+        #mydate = strptime(paste(myyear,'-', mymonth, '-', myday, sep = ''),'%Y-%m-%d', tz = 'US/Pacific')
+        mydates = c(mydates, paste(strsplit(file_name, '_')[[1]][2],'-', strsplit(file_name, '_')[[1]][3], '-', strsplit(file_name,   '_')[[1]][4], sep = ''))
+        
+        ras1 = raster(file_name)
+        
+        min_ET24 = quantile(ras1, probs = c(0.0001, 0.9999))[1]
+        max_ET24 = quantile(ras1, probs = c(0.0001, 0.9999))[2]
+        
+        ras1[ras1 < 0] <- NA
+        ras1[ras1 > 12] <- 12
+        
+        min_ET24s = c(min_ET24s, min_ET24)
+        max_ET24s = c(max_ET24s, max_ET24)
+        
+        mean_ET24s = c(mean_ET24s, mean(values(ras1), na.rm = T))
+        sd_ET24s = c(sd_ET24s, sd(values(ras1), na.rm = T))
+        
+        median_ET24s = c(median_ET24s, quantile(values(ras1), prob = c(0.5), na.rm = T))
+              
+      }
+    }
+    
+    if (calib == 'Min_Min') {
+      minmin_mean_ET24s = mean_ET24s
+      minmin_med_ET24s = median_ET24s
+      minmin_sd_ET24s = sd_ET24s
+      minmin_min_ET24s = min_ET24s
+      minmin_max_ET24s = max_ET24s
+    }
+    
+    if (calib == 'Max_Max') {
+      maxmax_mean_ET24s = mean_ET24s
+      maxmax_med_ET24s = median_ET24s
+      maxmax_sd_ET24s = sd_ET24s
+      maxmax_min_ET24s = min_ET24s
+      maxmax_max_ET24s = max_ET24s
+    }
+    if (calib == 'Max_hot_Min_cold') {
+      minmax_mean_ET24s = mean_ET24s
+      minmax_med_ET24s = median_ET24s
+      minmax_sd_ET24s = sd_ET24s
+      minmax_min_ET24s = min_ET24s
+      minmax_max_ET24s = max_ET24s
+    }
+    if (calib == 'Max_cold_Min_hot') {
+      maxmin_mean_ET24s = mean_ET24s
+      maxmin_med_ET24s = median_ET24s
+      maxmin_sd_ET24s = sd_ET24s
+      maxmin_min_ET24s = min_ET24s
+      maxmin_max_ET24s = max_ET24s
+    }
+    if (calib == 'closest') {
+      closest_mean_ET24s = mean_ET24s
+      closest_med_ET24s = median_ET24s
+      closest_sd_ET24s = sd_ET24s
+      closest_min_ET24s = min_ET24s
+      closest_max_ET24s = max_ET24s
+    }
+  }
+} 
+
+```
+
+```{r}
+
+if (!files_avail){
+  ImgDate = strptime(mydates, '%Y-%m-%d', tz = 'US/Pacific')
+  mean_ET24s_df = data.frame(ImgDate, minmin_mean_ET24s, maxmax_mean_ET24s, minmax_mean_ET24s, maxmin_mean_ET24s, closest_mean_ET24s)
+  med_ET24s_df = data.frame(ImgDate,minmin_med_ET24s, maxmax_med_ET24s, minmax_med_ET24s, maxmin_med_ET24s, closest_med_ET24s)
+  sd_ET24s_df = data.frame(ImgDate,minmin_sd_ET24s, maxmax_sd_ET24s, minmax_sd_ET24s, maxmin_sd_ET24s, closest_sd_ET24s)
+  min_ET24s_df = data.frame(ImgDate,minmin_min_ET24s, maxmax_min_ET24s, minmax_min_ET24s, maxmin_min_ET24s, closest_min_ET24s)
+  max_ET24s_df = data.frame(ImgDate,minmin_max_ET24s, maxmax_max_ET24s, minmax_max_ET24s, maxmin_max_ET24s, closest_max_ET24s)
+}  
+
+```
+
+
+```{r}
+#write.csv(mean_ET24s_df, file = 'J:/EE_METRIC_RESULTS_SACREMANTO140/mean_ET24s_df.csv')
+#write.csv(med_ET24s_df, file = 'J:/EE_METRIC_RESULTS_SACREMANTO140/med_ET24s_df.csv')
+#write.csv(sd_ET24s_df, file = 'J:/EE_METRIC_RESULTS_SACREMANTO140/sd_ET24s_df.csv')
+#write.csv(min_ET24s_df, file = 'J:/EE_METRIC_RESULTS_SACREMANTO140/min_ET24s_df.csv')
+#write.csv(max_ET24s_df, file = 'J:/EE_METRIC_RESULTS_SACREMANTO140/max_ET24s_df.csv')
+
+```
+
+
+
+
+```{r}
+# To compute coeff of variation of ET due to different calibration sets
+
+
+#FullET_df_for_cv = FullET_df_for_TS[,4:7]
+FullET_df_for_cv = mean_ET24s_df[,2:5]
+
+Full_ET_cv = apply(FullET_df_for_cv,1, function(x) {sd(x,na.rm =T)*100/mean(x,na.rm =T)})
+ppt_file = read.csv('C:/Users/Sulochan/Google Drive/METRIC Earth Engine Jupyter Notebook/Weather Data/SacrementoWeatherData/Sacramento140daily.csv')
+ppt_TS = levels(factor(ppt_file$TIMESTAMP))[factor(ppt_file$TIMESTAMP)]
+ppt_TS = strptime(ppt_TS, format = '%m/%d/%Y')
+
+#pdf('coeff_of_var_ET.pdf', width = 8, height = 4)
+par (mar = c(8,5,2,4))
+plot(mean_ET24s_df$ImgDate, Full_ET_cv, type = 'p',cex = 0.1, ylim = c(0,20), axes = F,lwd =2, xlab = '', ylab = '')
+
+#Create grid
+abline(v = as.numeric(c(strptime('2013-06-01','%Y-%m-%d', tz = 'US/Pacific'),
+             strptime('2014-01-01','%Y-%m-%d', tz = 'US/Pacific'),
+             strptime('2015-01-01','%Y-%m-%d', tz = 'US/Pacific'),
+             strptime('2015-12-01','%Y-%m-%d', tz = 'US/Pacific'))),
+       col = 'lightgray', lty = 2)
+abline(h = seq(0,20,5), col = 'lightgray', lty = 2)
+
+#precip
+points(ppt_TS, 20 - ppt_file$Rain_mm/4, 'l', col ='darkgray', lwd = 2)
+
+points(mean_ET24s_df$ImgDate[1:21], Full_ET_cv[1:21], 'l', lwd =2, 'l')
+points(mean_ET24s_df$ImgDate[22:38], Full_ET_cv[22:38], 'l', lwd =2, 'l')
+points(mean_ET24s_df$ImgDate[39:55], Full_ET_cv[39:55], 'l', lwd =2, 'l')
+
+points(mean_ET24s_df$ImgDate, Full_ET_cv, lwd =3, cex = 0.5)
+axis(2)
+box()
+
+
+
+
+#axis(4, at = c(0,10,20,30,40,50), labels = c(0, 5, 10, 15, 20, 25))
+axis(4, at = c(0, 5, 10, 15, 20), labels = c(60, 45, 30, 15, 0))
+mtext(side = 4, line = 2, 'Precip (mm)')
+mtext(side = 2, line = 3, 'Coefficient of Variation (%)')
+mtext(side = 1, line = 6, 'Date')
+
+legend('bottomright', legend = c('Precip (mm)'),
+       col = c('gray'),
+       cex = 1,
+       lwd = c(2),
+       lty = c(1),
+       bg = 'white', bty = 'n')
+
+dates_for_axis_start = strptime('2013-06-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2015-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '3 month')
+axis(1, dates_for_axis, labels = format(dates_for_axis, '%Y-%m-%d'), las = 2, cex.axis = 1)
+
+
+
+
+#dev.off()
+```
+
+```{r fig2, fig.height= 10, fig.asp= 0.7}
+
+## 
+
+##
+start_2013 = strptime('2013-01-01','%Y-%m-%d', tz = 'US/Pacific')
+start_2014 = strptime('2014-01-01','%Y-%m-%d', tz = 'US/Pacific')
+start_2015 = strptime('2015-01-01','%Y-%m-%d', tz = 'US/Pacific')
+
+end_2013 = strptime('2013-12-31','%Y-%m-%d', tz = 'US/Pacific')
+end_2014 = strptime('2014-12-31','%Y-%m-%d', tz = 'US/Pacific')
+end_2015 = strptime('2015-11-01','%Y-%m-%d', tz = 'US/Pacific') # The end of 2015 is not 12-31
+
+ind2013 = FullET_df_for_TS $dates > start_2013 & FullET_df_for_TS $dates < end_2013
+ind2014 = FullET_df_for_TS $dates > start_2014 & FullET_df_for_TS $dates < end_2014
+ind2015 = FullET_df_for_TS $dates > start_2015 & FullET_df_for_TS $dates < end_2015
+
+
+dates_for_axis_start = strptime('2013-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2013-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+
+#pdf("figure1_Points_all_new_legend_May16.pdf", width = 12, height = 6)
+op <- par(no.readonly = TRUE)
+par (oma = c(1,4,1,1))
+layout(matrix(c(1,2,3,4), 1, 4, byrow = TRUE))
+par(mai = c(1.2,0.4,0.2,0.1))
+plot(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $METRIC_ETs[ind2013],'l',lwd = 3, ylim = c(-1, 8), xlab = '', ylab = '', axes = F)
+
+lines(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $METRIC_ETs_minmin[ind2013],'b',col = 'green', lwd = 1, pch =15, cex = 1.5, lty = 2)
+lines(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $METRIC_ETs_maxmax[ind2013],'b',col = 'blue', lwd = 1, pch =16, cex = 1.5,  lty = 2)
+lines(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $METRIC_ETs_minmax[ind2013],'b',col = 'purple', lwd = 1, pch =17,cex = 1.5, lty = 2)
+lines(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $METRIC_ETs_maxmin[ind2013],'b',col = 'orange', lwd = 1, pch =8, cex = 1.5, lty = 2)
+lines(FullET_df_for_TS $dates[ind2013],FullET_df_for_TS $Amf_ETs[ind2013],'l',col = 'red', lwd = 3 )
+
+
+dates_for_axis_start = strptime('2013-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2013-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, dates_for_axis, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 2)
+
+#axis(1, FullET_df_for_TS$dates[ind2013][c(1,3,6,8,11, 14,16)], labels =  format(FullET_df_for_TS $dates[ind2013][c(1,3,6, 8,11,14,16)], '%m-%d'), las =2)
+axis(2, cex.axis = 2)
+box()
+abline(v = dates_for_axis, lty =2, col = 'lightgray')
+abline(h = c(0,2,4,6,8,10), lty =2, col = 'lightgray')
+mtext('2013', line = 7, side = 1, cex = 2)
+mtext('ET (mm)', line = 4, side = 2, cex = 2)
+
+
+par(mai = c(1.2,0.2,0.2,0.1))
+
+plot(FullET_df_for_TS $dates[ind2014],FullET_df_for_TS $METRIC_ETs[ind2014],'l',lwd = 3, ylim = c(-1, 8), axes = F, ylab = '', xlab = '')
+
+lines(FullET_df_for_TS $dates[ind2014],FullET_df_for_TS $METRIC_ETs_minmin[ind2014],'b',col = 'green', lwd = 1, pch =15, cex = 1.5, lty = 2)
+lines(FullET_df_for_TS $dates[ind2014],FullET_df_for_TS $METRIC_ETs_maxmax[ind2014],'b',col = 'blue', lwd = 1, pch =16, cex = 1.5,  lty = 2)
+lines(FullET_df_for_TS $dates[ind2014],FullET_df_for_TS $METRIC_ETs_minmax[ind2014],'b',col = 'purple', lwd = 1, pch =17,cex = 1.5, lty = 2)
+lines(FullET_df_for_TS $dates[ind2014],FullET_df_for_TS $METRIC_ETs_maxmin[ind2014],'b',col = 'orange', lwd = 1, pch =8, cex = 1.5, lty = 2)
+lines(FullET_df_for_TS $dates[ind2014],FullET_df_for_TS $Amf_ETs[ind2014],'l',col = 'red', lwd = 3)
+
+dates_for_axis_start = strptime('2014-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2014-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, dates_for_axis, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 2)
+
+#axis(1, FullET_df_for_TS$dates[ind2014][c(1,5,8,9,11, 13,15)], labels =  format(FullET_df_for_TS $dates[ind2014][c(1,5,8, 9,11,13,15)], '%m-%d'), las =2)
+box()
+abline(v = dates_for_axis, lty =2, col = 'lightgray')
+abline(h = c(0,2,4,6,8,10), lty =2, col = 'lightgray')
+mtext('2014', line = 7, side = 1, cex = 2)
+
+plot(FullET_df_for_TS $dates[ind2015],FullET_df_for_TS $METRIC_ETs[ind2015],'l',lwd = 3, ylim = c(-1, 8), axes = F, ylab = '', xlab = '')
+
+lines(FullET_df_for_TS $dates[ind2015],FullET_df_for_TS $METRIC_ETs_minmin[ind2015],'b',col = 'green', lwd = 1, pch =15, cex = 1.2, lty = 2)
+lines(FullET_df_for_TS $dates[ind2015],FullET_df_for_TS $METRIC_ETs_maxmax[ind2015],'b',col = 'blue', lwd = 1, pch =16, cex = 1.5,  lty = 2)
+lines(FullET_df_for_TS $dates[ind2015],FullET_df_for_TS $METRIC_ETs_minmax[ind2015],'b',col = 'purple', lwd = 1, pch =17,cex = 1.5, lty = 2)
+lines(FullET_df_for_TS $dates[ind2015],FullET_df_for_TS $METRIC_ETs_maxmin[ind2015],'b',col = 'orange', lwd = 1, pch =8, cex = 1.5, lty = 2)
+lines(FullET_df_for_TS $dates[ind2015],FullET_df_for_TS $Amf_ETs[ind2015],'l',col = 'red', lwd = 3 )
+
+dates_for_axis_start = strptime('2015-04-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis_end = strptime('2015-12-01','%Y-%m-%d', tz = 'US/Pacific')
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, dates_for_axis, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 2)
+
+box()
+abline(v = dates_for_axis, lty =2, col = 'lightgray')
+abline(h = c(0,2,4,6,8,10), lty =2, col = 'lightgray')
+mtext('2015', line = 7, side = 1, cex = 2)
+plot.new()
+legend('center', legend = c('Amflux','Closest', 'Min Min', 'Max Max', 'Min Cold Max Hot', 'Max Cold Min Hot'),
+       col = c('red', 'black', 'green', 'blue', 'purple', 'orange'),
+       cex = 2,
+       lwd = c(4,3,1,1,1,1),
+       lty = c(1,1,2,2,2,2),
+       pch = c(NA, NA, 15, 16, 17, 8), bg = 'white', bty = 'n',y.intersp=2)
+
+
+#dev.off()
+write.csv(FullET_df_for_TS, file = "G:/EE_METRIC_RESULTS_SACREMANTO140/Figure10Data.csv")
+```
+
+```{r fig3, fig.height= 5, fig.asp= 1}
+
+
+pdf("Eval_of_model_R2_new_legend_jun_7.pdf", width = 6, height = 6)
+plot(FullET_df$METRIC_ETs, FullET_df$Amf_ETs, lwd= 3, ylim = c(0,10), xlim = c(0,10), pch = 3,
+     xlab = '24 hr METRIC ET (mm)', ylab = '24 hr Flux Tower ET (mm)')
+
+points(FullET_df$METRIC_ETs_minmin, FullET_df$Amf_ETs, lwd= 2, ylim = c(0,10), xlim = c(0,10), col = 'green', pch =15)
+points(FullET_df$METRIC_ETs_maxmax, FullET_df$Amf_ETs, lwd= 2, ylim = c(0,10), xlim = c(0,10), col = 'blue', pch =16)
+points(FullET_df$METRIC_ETs_minmax, FullET_df$Amf_ETs, lwd= 2, ylim = c(0,10), xlim = c(0,10), col = 'purple', pch =17)
+points(FullET_df$METRIC_ETs_maxmin, FullET_df$Amf_ETs, lwd= 2, ylim = c(0,10), xlim = c(0,10), col = 'orange', pch =18, cex = 1.5)
+grid()
+abline(0, 1, lty =2)
+
+
+legend('topleft', legend = c(paste('Closest (',  signif(R2(FullET_df$METRIC_ETs, FullET_df$Amf_ETs),digits = 2), ')', sep = ''),
+                              paste('Min Min (',  signif(R2(FullET_df$METRIC_ETs_minmin, FullET_df$Amf_ETs),digits = 2), ')', sep = ''),
+                              paste('Max Max (',  signif(R2(FullET_df$METRIC_ETs_maxmax, FullET_df$Amf_ETs),digits = 2), ')', sep = ''),
+                              paste('Min Cold Max Hot (',  signif(R2(FullET_df$METRIC_ETs_minmax, FullET_df$Amf_ETs),digits = 2), ')', sep = ''),
+                              paste('Max Cold Min Hot (',  signif(R2(FullET_df$METRIC_ETs_maxmin, FullET_df$Amf_ETs),digits = 2), ')', sep = '')),
+       col = c('black', 'green', 'blue', 'purple', 'orange'),
+       pch = c(3, 15, 16, 17, 18),
+       pt.cex = c(1,1,1,1,1.5),
+       lwd = c(3,1,1,1,1), lty = 0, bg = 'white',
+       y.intersp=1.1)
+dev.off()
+
+```
+
+```{r}
+library(hydroGOF)
+
+RMSE = function(m, o){
+  sqrt(mean((m - o)^2))
+}
+
+Pbias = function (m, o){
+  mean((m-o)/o)
+}
+
+R2_s = c(signif(R2(FullET_df$METRIC_ETs[ind2013], FullET_df$Amf_ETs[ind2013]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_minmin[ind2013], FullET_df$Amf_ETs[ind2013]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_maxmax[ind2013], FullET_df$Amf_ETs[ind2013]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_minmax[ind2013], FullET_df$Amf_ETs[ind2013]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_maxmin[ind2013], FullET_df$Amf_ETs[ind2013]),digits = 2))
+
+NSE_s = c(NSE(FullET_df$METRIC_ETs[ind2013], FullET_df$Amf_ETs[ind2013]),
+          NSE(FullET_df$METRIC_ETs_minmin[ind2013], FullET_df$Amf_ETs[ind2013]),
+          NSE(FullET_df$METRIC_ETs_maxmax[ind2013], FullET_df$Amf_ETs[ind2013]),
+          NSE(FullET_df$METRIC_ETs_minmax[ind2013], FullET_df$Amf_ETs[ind2013]),
+          NSE(FullET_df$METRIC_ETs_maxmin[ind2013], FullET_df$Amf_ETs[ind2013]))
+
+RMSE_s = c(RMSE(FullET_df$METRIC_ETs[ind2013], FullET_df$Amf_ETs[ind2013]),
+           RMSE(FullET_df$METRIC_ETs_minmin[ind2013], FullET_df$Amf_ETs[ind2013]),
+          RMSE(FullET_df$METRIC_ETs_maxmax[ind2013], FullET_df$Amf_ETs[ind2013]),
+          RMSE(FullET_df$METRIC_ETs_minmax[ind2013], FullET_df$Amf_ETs[ind2013]),
+          RMSE(FullET_df$METRIC_ETs_maxmin[ind2013], FullET_df$Amf_ETs[ind2013]))
+
+Pbias_s = c(Pbias(FullET_df$METRIC_ETs[ind2013], FullET_df$Amf_ETs[ind2013]),
+           Pbias(FullET_df$METRIC_ETs_minmin[ind2013], FullET_df$Amf_ETs[ind2013]),
+          Pbias(FullET_df$METRIC_ETs_maxmax[ind2013], FullET_df$Amf_ETs[ind2013]),
+          Pbias(FullET_df$METRIC_ETs_minmax[ind2013], FullET_df$Amf_ETs[ind2013]),
+          Pbias(FullET_df$METRIC_ETs_maxmin[ind2013], FullET_df$Amf_ETs[ind2013]))
+
+result_df = data.frame(R2_s, NSE_s, RMSE_s, Pbias_s)
+rownames(result_df) = c('Closest', 'Min Min', 'Max Max', 'Min Cold Max Hot', 'Max Cold Min Hot')
+colnames(result_df) = c('R_squared', 'NSE', 'RMSE', 'PBias')
+#write.csv(result_df, 'Model_validation_2013_new_May16.csv')
+
+```
+
+```{r}
+library(hydroGOF)
+
+R2_s = c(signif(R2(FullET_df$METRIC_ETs[ind2014], FullET_df$Amf_ETs[ind2014]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_minmin[ind2014], FullET_df$Amf_ETs[ind2014]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_maxmax[ind2014], FullET_df$Amf_ETs[ind2014]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_minmax[ind2014], FullET_df$Amf_ETs[ind2014]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_maxmin[ind2014], FullET_df$Amf_ETs[ind2014]),digits = 2))
+
+NSE_s = c(NSE(FullET_df$METRIC_ETs[ind2014], FullET_df$Amf_ETs[ind2014]),
+          NSE(FullET_df$METRIC_ETs_minmin[ind2014], FullET_df$Amf_ETs[ind2014]),
+          NSE(FullET_df$METRIC_ETs_maxmax[ind2014], FullET_df$Amf_ETs[ind2014]),
+          NSE(FullET_df$METRIC_ETs_minmax[ind2014], FullET_df$Amf_ETs[ind2014]),
+          NSE(FullET_df$METRIC_ETs_maxmin[ind2014], FullET_df$Amf_ETs[ind2014]))
+
+RMSE_s = c(RMSE(FullET_df$METRIC_ETs[ind2014], FullET_df$Amf_ETs[ind2014]),
+           RMSE(FullET_df$METRIC_ETs_minmin[ind2014], FullET_df$Amf_ETs[ind2014]),
+          RMSE(FullET_df$METRIC_ETs_maxmax[ind2014], FullET_df$Amf_ETs[ind2014]),
+          RMSE(FullET_df$METRIC_ETs_minmax[ind2014], FullET_df$Amf_ETs[ind2014]),
+          RMSE(FullET_df$METRIC_ETs_maxmin[ind2014], FullET_df$Amf_ETs[ind2014]))
+
+Pbias_s = c(Pbias(FullET_df$METRIC_ETs[ind2014], FullET_df$Amf_ETs[ind2014]),
+           Pbias(FullET_df$METRIC_ETs_minmin[ind2014], FullET_df$Amf_ETs[ind2014]),
+          Pbias(FullET_df$METRIC_ETs_maxmax[ind2014], FullET_df$Amf_ETs[ind2014]),
+          Pbias(FullET_df$METRIC_ETs_minmax[ind2014], FullET_df$Amf_ETs[ind2014]),
+          Pbias(FullET_df$METRIC_ETs_maxmin[ind2014], FullET_df$Amf_ETs[ind2014]))
+
+result_df = data.frame(R2_s, NSE_s, RMSE_s, Pbias_s)
+rownames(result_df) = c('Closest', 'Min Min', 'Max Max', 'Min Cold Max Hot', 'Max Cold Min Hot')
+colnames(result_df) = c('R_squared', 'NSE', 'RMSE', 'PBias')
+#write.csv(result_df, 'Model_validation_2014_new_May16.csv')
+
+```
+
+
+```{r}
+library(hydroGOF)
+ind2015 = seq(26,42,1)
+R2_s = c(signif(R2(FullET_df$METRIC_ETs[ind2015], FullET_df$Amf_ETs[ind2015]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_minmin[ind2015], FullET_df$Amf_ETs[ind2015]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_maxmax[ind2015], FullET_df$Amf_ETs[ind2015]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_minmax[ind2015], FullET_df$Amf_ETs[ind2015]),digits = 2),
+  signif(R2(FullET_df$METRIC_ETs_maxmin[ind2015], FullET_df$Amf_ETs[ind2015]),digits = 2))
+
+NSE_s = c(NSE(FullET_df$METRIC_ETs[ind2015], FullET_df$Amf_ETs[ind2015]),
+          NSE(FullET_df$METRIC_ETs_minmin[ind2015], FullET_df$Amf_ETs[ind2015]),
+          NSE(FullET_df$METRIC_ETs_maxmax[ind2015], FullET_df$Amf_ETs[ind2015]),
+          NSE(FullET_df$METRIC_ETs_minmax[ind2015], FullET_df$Amf_ETs[ind2015]),
+          NSE(FullET_df$METRIC_ETs_maxmin[ind2015], FullET_df$Amf_ETs[ind2015]))
+
+RMSE_s = c(RMSE(FullET_df$METRIC_ETs[ind2015], FullET_df$Amf_ETs[ind2015]),
+           RMSE(FullET_df$METRIC_ETs_minmin[ind2015], FullET_df$Amf_ETs[ind2015]),
+          RMSE(FullET_df$METRIC_ETs_maxmax[ind2015], FullET_df$Amf_ETs[ind2015]),
+          RMSE(FullET_df$METRIC_ETs_minmax[ind2015], FullET_df$Amf_ETs[ind2015]),
+          RMSE(FullET_df$METRIC_ETs_maxmin[ind2015], FullET_df$Amf_ETs[ind2015]))
+
+Pbias_s = c(Pbias(FullET_df$METRIC_ETs[ind2015], FullET_df$Amf_ETs[ind2015]),
+           Pbias(FullET_df$METRIC_ETs_minmin[ind2015], FullET_df$Amf_ETs[ind2015]),
+          Pbias(FullET_df$METRIC_ETs_maxmax[ind2015], FullET_df$Amf_ETs[ind2015]),
+          Pbias(FullET_df$METRIC_ETs_minmax[ind2015], FullET_df$Amf_ETs[ind2015]),
+          Pbias(FullET_df$METRIC_ETs_maxmin[ind2015], FullET_df$Amf_ETs[ind2015]))
+
+result_df = data.frame(R2_s, NSE_s, RMSE_s, Pbias_s)
+rownames(result_df) = c('Closest', 'Min Min', 'Max Max', 'Min Cold Max Hot', 'Max Cold Min Hot')
+colnames(result_df) = c('R_squared', 'NSE', 'RMSE', 'PBias')
+#write.csv(result_df, 'Model_validation_2015_new_May16.csv')
+
+```
+
+```{r}
+cor(METRIC_ETs, Amf_ETs, use = 'na.or.complete')
+R2(FullET_df$Amf_ETs, FullET_df$METRIC_ETs)
+
+
+```
+
+```{r}
+pdf("NotCumulative_Distribution_of_ET_7_24_2014_new_legend_June_8.pdf", width = 8, height = 8)
+par (oma = c(1,4,1,1))
+
+#op <- par(no.readonly = TRUE)
+#par (oma = c(1,4,1,1))
+#layout(matrix(c(1,2), 1, 2, byrow = TRUE))
+#par(mai = c(1.2,0.4,0.2,0.1))
+
+library(raster)
+# Creating distribution of ET24
+foldername = 'J:/EE_METRIC_RESULTS_SACREMANTO140/2014'
+img_date = '2014_07_24_11_45'
+
+pix_type = 'Min_Min'
+img_minmin = raster(paste(foldername, '/', pix_type, '/ET24_', img_date, '_', pix_type, '.tif', sep = ''))
+
+pix_type = 'Max_Max'
+img_maxmax = raster(paste(foldername, '/', pix_type, '/ET24_', img_date, '_', pix_type, '.tif', sep = ''))
+
+pix_type = 'closest'
+img_closest = raster(paste(foldername, '/', pix_type, '/ET24_', img_date, '_', pix_type, '.tif', sep = ''))
+
+pix_type = 'Max_cold_Min_hot'
+img_maxmin = raster(paste(foldername, '/', pix_type, '/ET24_', img_date, '_', pix_type, '.tif', sep = ''))
+
+pix_type = 'Max_hot_Min_cold'
+img_minmax = raster(paste(foldername, '/', pix_type, '/ET24_', img_date, '_', pix_type, '.tif', sep = ''))
+
+H_vec = as.vector(as.matrix(img_minmin))
+H_vec[H_vec<0] = NA
+H_vec[H_vec>12] = 12
+
+H_nonNA = H_vec[is.na(H_vec)==F]
+minmin_mean = mean(H_nonNA, na.rm = T)
+minmin_sd = sd(H_nonNA, na.rm = T)
+
+ylabels = c(0,500,1000,1500,2000,2500,3000)*900*2.4E-4 # THese are in acres 
+# Use these acres to interpolate for 0, 100, 200, 300, 400, 500, 600 acres as
+# 0, 463, 926, 1389, 1852, 2315, 2778 pixels
+#length(H_nonNA) * 900*2.4E-4
+h = hist(H_nonNA, breaks = 100,plot =F)
+
+plot(h$mids, h$density, 'l', xlim = c(-1.9, 10), ylim = c(0,0.30), col = 'green', lwd = 2, axes = F, xlab = '', ylab = '')
+#plot(h$mids, h$density*h$count, 'l', xlim = c(0, 10), col = 'green', lwd = 2, axes = F, xlab = '', ylab = '')
+#plot(h$mids, cumsum(h$density*h$count)/sum(h$density*h$count), 'l', xlim = c(0, 10), col = 'green', lwd = 2, axes = F, xlab = '', ylab = '')
+#axis(2, at= c(0,500,1000,1500,2000,2500,3000), labels = ylabels, cex.axis = 1.5)
+#axis(2, cex.axis = 2)#, at = c(0, 463, 926, 1389, 1852, 2315, 2778), labels = c(0, 100, 200, 300, 400, 500 ,600), cex.axis = 1.5)
+axis(2, cex.axis = 2, at = c(0, 0.1, 0.2, 0.3), labels = c(0, 0.1, 0.2, 0.3))
+axis(1, cex.axis = 2, at = c(0, 2, 4, 6, 8, 10), labels = c(0, 2, 4, 6, 8, 10))
+box()
+
+H_vec = as.vector(as.matrix(img_maxmax))
+H_vec[H_vec<0] = NA
+H_vec[H_vec>12] = 12
+H_nonNA = H_vec[is.na(H_vec)==F]
+maxmax_mean = mean(H_nonNA, na.rm = T)
+maxmax_sd = sd(H_nonNA, na.rm = T)
+
+h = hist(H_nonNA, breaks = 100, plot = F)
+points(h$mids, h$density, 'l', col = 'blue', lwd = 2)#, xlim = c(-10, 20))
+#points(h$mids, h$density*h$count, 'l', col = 'blue', lwd = 2)#, xlim = c(-10, 20))
+#points(h$mids, cumsum(h$density*h$count)/sum(h$density*h$count), 'l', col = 'blue', lwd = 2)#, xlim = c(-10, 20))
+
+H_vec = as.vector(as.matrix(img_closest))
+H_vec[H_vec<0] = NA
+H_vec[H_vec>12] = 12
+H_nonNA = H_vec[is.na(H_vec)==F]
+closest_mean = mean(H_nonNA, na.rm = T)
+closest_sd = sd(H_nonNA, na.rm = T)
+
+h = hist(H_nonNA, breaks = 100, plot = F)
+points(h$mids, h$density, 'l', col = 'black', lwd = 2, lty = 2)#, xlim = c(-10, 20))
+#points(h$mids, h$density*h$count, 'l', col = 'black', lwd = 2)#, xlim = c(-10, 20))
+#points(h$mids, cumsum(h$density*h$count)/sum(h$density*h$count), 'l', col = 'black', lwd = 2)#, xlim = c(-10, 20))
+
+H_vec = as.vector(as.matrix(img_maxmin))
+H_vec[H_vec<0] = NA
+H_vec[H_vec>12] = 12
+H_nonNA = H_vec[is.na(H_vec)==F]
+maxmin_mean = mean(H_nonNA, na.rm = T)
+maxmin_sd = sd(H_nonNA, na.rm = T)
+
+h = hist(H_nonNA, breaks = 100, plot = F)
+points(h$mids, h$density, 'l', col = 'orange', lwd = 2)#, xlim = c(-10, 20))
+#points(h$mids, h$density*h$count, 'l', col = 'orange', lwd = 2)#, xlim = c(-10, 20))
+#points(h$mids, cumsum(h$density*h$count)/sum(h$density*h$count), 'l', col = 'orange', lwd = 2)#, xlim = c(-10, 20))
+
+H_vec = as.vector(as.matrix(img_minmax))
+H_vec[H_vec<0] = NA
+H_vec[H_vec>12] = 12
+H_nonNA = H_vec[is.na(H_vec)==F]
+minmax_mean = mean(H_nonNA, na.rm = T)
+minmax_sd = sd(H_nonNA, na.rm = T)
+
+h = hist(H_nonNA, breaks = 100, plot = F)
+points(h$mids, h$density, 'l', col = 'purple', lwd = 2)#, xlim = c(-10, 20))
+#points(h$mids, h$density*h$count, 'l', col = 'purple', lwd = 2)#, xlim = c(-10, 20))
+#points(h$mids, cumsum(h$density*h$count)/sum(h$density*h$count), 'l', col = 'purple', lwd = 2)#, xlim = c(-10, 20))
+
+#abline(h = c(0, 463, 926, 1389, 1852, 2315, 2778), lty =2, col = 'lightgray')
+abline(h = c(seq(0, 1, 0.1)), lty =2, col = 'lightgray')
+abline(v = c(0,2,4,6,8,10,12), lty =2, col = 'lightgray')
+
+mtext('ET (mm)', line = 4, side = 1, cex = 2)
+#mtext('Proportion of Area', line = 4, side = 2, cex = 2)
+mtext('Relative Frequency', line = 4, side = 2, cex = 2)
+#plot.new()
+
+legend_list = c(paste('Closest [',signif(closest_mean,2),' , ', signif(closest_sd,2) , ']',sep=''),
+                paste('Min Min [',signif(minmin_mean,2),' , ', formatC(minmin_sd, 1, format = 'f') , ']',sep=''),
+                paste('Max Max [',signif(maxmax_mean,2),' , ', signif(maxmax_sd,2) , ']',sep=''),
+                paste('Min Cold Max Hot [',signif(minmax_mean,2),' , ', signif(minmax_sd,2) , ']',sep=''),
+                paste('Max Cold Min Hot [',signif(maxmin_mean,2),' , ', signif(maxmin_sd,2) , ']',sep=''))
+                
+#legend('topleft', legend = c('Closest', 'Min Min', 'Max Max', 'Min Cold Max Hot', 'Max Cold Min Hot'),
+legend('topleft', legend = legend_list,
+       col = c('black', 'green', 'blue', 'purple', 'orange'),
+       cex = 1.4,
+       lwd = c(2,2,2,2,2),
+       lty = c(2,1,1,1,1),
+       pch = c(NA,NA, NA, NA, NA), bg = 'white')
+dev.off()
+```
+
+```{r}
+# Temp at the weather station
+
+```
+
+```{r}
+pdf("Sets_of_Calib_degK_new_legend.pdf", width = 8, height = 8)
+par (oma = c(1,4,1,1))
+cold_pixs = read.csv('cold_pix_df_Sacramento140_2014_Validation_2014_07_24_11_45.csv')
+hot_pixs = read.csv('hot_pix_df_Sacramento140_2014_Validation_2014_07_24_11_45.csv')
+
+#cold_pixs$Ts = cold_pixs$Ts - 273.15
+#hot_pixs$Ts = hot_pixs$Ts - 273.15
+
+min_dT_cold_row =  cold_pixs[cold_pixs$dT_cold == min(cold_pixs$dT_cold),]
+max_dT_cold_row =  cold_pixs[cold_pixs$dT_cold == max(cold_pixs$dT_cold),]
+
+min_dT_hot_row =  hot_pixs[hot_pixs$dT_hot == min(hot_pixs$dT_hot),]
+max_dT_hot_row =  hot_pixs[hot_pixs$dT_hot == max(hot_pixs$dT_hot),]
+
+closest_cold_row = cold_pixs[cold_pixs$distance == min(cold_pixs$distance),]
+closest_hot_row = hot_pixs[hot_pixs$distance == min(hot_pixs$distance),]
+
+
+all_dT = c(cold_pixs$dT_cold, hot_pixs$dT_hot)
+all_Ts = c(cold_pixs$Ts, hot_pixs$Ts)
+
+plot(all_Ts, all_dT, cex = 1.5, lwd = 2, col = 'darkgray', xlab = 'Ts (K)', ylab = '', cex.lab = 2, cex.axis = 2)
+mtext('dT (K)', line = 4, side = 2, cex = 2)
+# MIN MIN 
+points(c(min_dT_cold_row$Ts,min_dT_hot_row$Ts), c(min_dT_cold_row$dT_cold, min_dT_hot_row$dT_hot), pch = 15, cex = 1.5, lwd =2, 'b', col = 'green')
+
+# MAX MAX
+points(c(max_dT_cold_row$Ts,max_dT_hot_row$Ts), c(max_dT_cold_row$dT_cold, max_dT_hot_row$dT_hot), pch = 16, cex = 1.5, lwd =2, 'b', col = 'blue')
+
+# MIN MAX
+points(c(min_dT_cold_row$Ts,max_dT_hot_row$Ts), c(min_dT_cold_row$dT_cold, max_dT_hot_row$dT_hot), pch = 17, cex = 1.5, lwd =2, 'b', col = 'purple')
+
+# MAX MIN
+points(c(max_dT_cold_row$Ts,min_dT_hot_row$Ts), c(max_dT_cold_row$dT_cold, min_dT_hot_row$dT_hot), pch = 8, cex = 1.5, lwd =2, 'b', col = 'orange')
+
+# Closest
+points(c(closest_cold_row$Ts,closest_hot_row$Ts), c(closest_cold_row$dT_cold, closest_hot_row$dT_hot), cex = 1.5, lwd =2, 'b', col = 'black', lty = 2)
+
+abline(v = c(seq(308,320,2)), lty =2, col = 'lightgray')
+abline(h = c(seq(-1,6,1)), lty =2, col = 'lightgray')
+
+legend('bottomright', legend = c('Closest', 'Min Min', 'Max Max', 'Min Cold Max Hot', 'Max Cold Min Hot'),
+       col = c('black', 'green', 'blue', 'purple', 'orange'),
+       cex = 1.7,
+       lwd = c(2,2,2,2,2),
+       lty = c(2,1,1,1,1),
+       pch = c(1,15, 16, 17, 8), bg = 'white')
+
+dev.off()
+
+
+```
+```{r}
+hot_cold_location_df = data.frame()
+min_dT_cold_loc = c(min_dT_cold_row$longitude, min_dT_cold_row$latitude)
+max_dT_cold_loc = c(max_dT_cold_row$longitude, max_dT_cold_row$latitude)
+
+min_dT_hot_loc = c(min_dT_hot_row$longitude, min_dT_hot_row$latitude)
+max_dT_hot_loc = c(max_dT_hot_row$longitude, max_dT_hot_row$latitude)
+
+closest_cold_loc = c(closest_cold_row$longitude, closest_cold_row$latitude)
+closest_hot_loc = c(closest_hot_row$longitude, closest_hot_row$latitude)
+
+hot_cold_location_df = data.frame(min_dT_cold_loc, max_dT_cold_loc,
+                                  min_dT_hot_loc, max_dT_hot_loc,
+                                  closest_cold_loc, closest_hot_loc)
+
+hot_cold_df = data.frame(min_dT_cold_row)
+hot_cold_df = rbind(hot_cold_df, max_dT_cold_row)
+(hot_cold_df)
+
+
+hot_cold_df = rbind(hot_cold_df, min_dT_hot_row)
+hot_cold_df = rbind(hot_cold_df, max_dT_hot_row)
+hot_cold_df = rbind(hot_cold_df, closest_cold_row)
+hot_cold_df = rbind(hot_cold_df, closest_hot_row)
+
+#write.csv(t(hot_cold_location_df), 'hot_cold_locations.csv')
+
+```
+
+
+```{r}
+#pdf("Available Energy distribution.pdf", width = 8, height = 5)
+par (mar = c(5,5,3,3))
+getwd()
+cold_pixs = read.csv('cold_pix_df_Sacramento140_2014_Validation_2014_07_24_11_45.csv')
+hot_pixs = read.csv('hot_pix_df_Sacramento140_2014_Validation_2014_07_24_11_45.csv')
+
+Rn_G_cold = sort(cold_pixs$Rn - cold_pixs$G, decreasing = TRUE)
+Rn_G_hot = sort(hot_pixs$Rn - hot_pixs$G, decreasing = TRUE)
+
+min_dT_cold_row =  cold_pixs[cold_pixs$dT_cold == min(cold_pixs$dT_cold),]
+max_dT_cold_row =  cold_pixs[cold_pixs$dT_cold == max(cold_pixs$dT_cold),]
+
+min_dT_hot_row =  hot_pixs[hot_pixs$dT_hot == min(hot_pixs$dT_hot),]
+max_dT_hot_row =  hot_pixs[hot_pixs$dT_hot == max(hot_pixs$dT_hot),]
+
+closest_cold_row = cold_pixs[cold_pixs$distance == min(cold_pixs$distance),]
+closest_hot_row = hot_pixs[hot_pixs$distance == min(hot_pixs$distance),]
+
+n_cold = length(Rn_G_cold)
+n_hot = length(Rn_G_hot)
+
+xlim_ = c(0, max(n_cold, n_hot))
+ylim_ = c(min(Rn_G_cold,Rn_G_hot),max(Rn_G_cold,Rn_G_hot))
+
+plot(1:n_cold, Rn_G_cold, 'b', col = 'blue', xlim = c(0,50), ylim = ylim_, cex = 0.7, pch = 10, xlab = 'Calibration pixel polygon number', ylab = expression('Available Energy (Rn-G) [W/'~m^{2}~']'), cex.lab = 1.8, cex.axis = 1.8)
+points(1:n_hot, Rn_G_hot, 'b', col = 'red', cex = 0.7, pch = 10)
+
+#points(1:n_hot, Rn_G_hot, 'l', col = 'red', cex = 0.7, pch = 10)
+#points(1:n_cold, Rn_G_cold, 'l', col = 'blue', cex = 0.7, pch = 10)
+
+closest_cold_pos = c(which(Rn_G_cold == closest_cold_row$Rn - closest_cold_row$G))
+points(closest_cold_pos, Rn_G_cold[closest_cold_pos], cex = 2, lwd = 2)
+
+closest_hot_pos = c(which(Rn_G_hot == closest_hot_row$Rn - closest_hot_row$G))
+points(closest_hot_pos, Rn_G_hot[closest_hot_pos], cex = 2, lwd = 2)
+
+
+min_dT_cold_pos = c(which(Rn_G_cold == min_dT_cold_row$Rn - min_dT_cold_row$G))
+points(min_dT_cold_pos, Rn_G_cold[min_dT_cold_pos], pch = 15, cex = 2, lwd =2, 'b', col = 'green')
+
+min_dT_hot_pos = c(which(Rn_G_hot == min_dT_hot_row$Rn - min_dT_hot_row$G))
+points(min_dT_hot_pos, Rn_G_hot[min_dT_hot_pos], pch = 15, cex = 2, lwd =2, 'b', col = 'green')
+
+
+max_dT_cold_pos = c(which(Rn_G_cold == max_dT_cold_row$Rn - max_dT_cold_row$G))
+points(max_dT_cold_pos, Rn_G_cold[max_dT_cold_pos], pch = 16, cex = 2, lwd =2, 'b', col = 'blue')
+
+max_dT_hot_pos = c(which(Rn_G_hot == max_dT_hot_row$Rn - max_dT_hot_row$G))
+points(max_dT_hot_pos, Rn_G_hot[max_dT_hot_pos], pch = 16, cex = 2, lwd =2, 'b', col = 'blue')
+
+abline(h = seq(350, 650, 50), col = 'lightgray', lty = 2)
+abline(v = seq(0, 50, 10), col = 'lightgray', lty = 2)
+
+legend('topright', legend = c('Cold pixels', 'Hot pixels', 'Closest', 'Min dT', 'Max dT'),
+       col = c('blue','red', 'black', 'green', 'blue'),
+       cex = 1,
+       lwd = c(1,1,2,2,2),
+       lty = c(1,1,0,0,0),
+       pt.cex = c(0.7, 0.7, 2, 2, 2),
+       pch = c(10,10, 1,15, 16), bg = 'white')
+
+#dev.off()
+```
+```{r}
+library(raster)
+
+max_NDVIs = c()
+min_NDVIs = c()
+
+max_Tss = c()
+min_Tss = c()
+
+max_Rns = c()
+min_Rns = c()
+
+max_Gs = c()
+min_Gs = c()
+
+myyear = c('2013', '2014', '2015')
+mydates = c()
+for (year_ctr in myyear){
+  print (year_ctr)
+  foldername = paste('J:/EE_METRIC_RESULTS_SACREMANTO140/',year_ctr,'/NDVI',sep='')
+  setwd(foldername)
+  all_files = list.files(foldername)
+  for (file_name in all_files){
+    mydates = c(mydates, paste(strsplit(file_name, '_')[[1]][2],'-', strsplit(file_name, '_')[[1]][3], '-', strsplit(file_name, '_')[[1]][4], sep = ''))
+    
+    print (file_name)
+    ras1 = raster(file_name)
+    min_NDVIs = c(min_NDVIs, quantile(ras1, probs = c(0.0001, 0.9999))[1])
+    max_NDVIs = c(max_NDVIs, quantile(ras1, probs = c(0.0001, 0.9999))[2])
+  }
+  
+  foldername = paste('J:/EE_METRIC_RESULTS_SACREMANTO140/',year_ctr,'/Ts',sep='')
+  setwd(foldername)
+  all_files = list.files(foldername)
+  for (file_name in all_files){
+    print (file_name)
+    ras1 = raster(file_name)
+    min_Tss = c(min_Tss, quantile(ras1, probs = c(0.0001, 0.9999))[1])
+    max_Tss = c(max_Tss, quantile(ras1, probs = c(0.0001, 0.9999))[2])
+  }
+  
+  foldername = paste('J:/EE_METRIC_RESULTS_SACREMANTO140/',year_ctr,'/Rn',sep='')
+  setwd(foldername)
+  all_files = list.files(foldername)
+  for (file_name in all_files){
+    print (file_name)
+    ras1 = raster(file_name)
+    min_Rns = c(min_Rns, quantile(ras1, probs = c(0.0001, 0.9999))[1])
+    max_Rns = c(max_Rns, quantile(ras1, probs = c(0.0001, 0.9999))[2])
+  }
+  
+  foldername = paste('J:/EE_METRIC_RESULTS_SACREMANTO140/',year_ctr,'/G',sep='')
+  setwd(foldername)
+  all_files = list.files(foldername)
+  for (file_name in all_files){
+    print (file_name)
+    ras1 = raster(file_name)
+    min_Gs = c(min_Gs, quantile(ras1, probs = c(0.0001, 0.9999))[1])
+    max_Gs = c(max_Gs, quantile(ras1, probs = c(0.0001, 0.9999))[2])
+  }
+}
+```
+
+```{r}
+ImgDate = strptime(mydates, '%Y-%m-%d', tz = 'US/Pacific')
+
+min_Rn_Gs = min_Rns - min_Gs 
+max_Rn_Gs = max_Rns - max_Gs
+  
+max_min_df = data.frame(ImgDate, min_NDVIs, max_NDVIs, min_Tss, max_Tss, min_Rns, max_Rns, min_Gs, max_Gs, min_Rn_Gs, max_Rn_Gs)
+```
+
+```{r}
+#write.csv(max_min_df, file = 'J:/EE_METRIC_RESULTS_SACREMANTO140/Max_min_df_for_figure.csv')
+```
+
+```{r}
+pdf("Max_min_Rn_G_Ts_NDVI.pdf", width = 6.5, height = 8)
+par (mar = c(5,4,4,2) + c(4.5,2,1,1))
+
+asNumeric <- function(x) as.numeric(as.character(x))
+factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)],   
+                                                   asNumeric))
+
+foldername = 'C:/Users/Sulochan/Google Drive/METRIC Earth Engine Jupyter Notebook/METRIC csv/Validation'
+img_date = '2014_07_24_11_45'
+all_files = list.files(foldername)
+hot_pix_files = all_files[grep('hot_pix_df_Sacramento140', all_files)]
+cold_pix_files = all_files[grep('cold_pix_df_Sacramento140', all_files)]
+setwd(foldername)
+
+cold_NDVI_mean = c()
+cold_NDVI_sd = c()
+cold_NDVI_cv = c()
+
+cold_Ts_mean = c()
+cold_Ts_sd = c()
+cold_Ts_cv = c()
+
+cold_Rn_G_mean = c()
+cold_Rn_G_sd = c()
+cold_Rn_G_cv = c()
+
+hot_NDVI_mean = c()
+hot_NDVI_sd = c()
+hot_NDVI_cv = c()
+
+hot_Ts_mean = c()
+hot_Ts_sd = c()
+hot_Ts_cv = c()
+
+hot_Rn_G_mean = c()
+hot_Rn_G_sd = c()
+hot_Rn_G_cv = c()
+
+for (i in 1:length(hot_pix_files)){
+	hot_pix_df = t(read.csv(hot_pix_files[i]))
+	colnames_hot_pix_df = hot_pix_df[1,]
+	hot_pix_df = hot_pix_df[2:dim(hot_pix_df)[1],]
+	colnames(hot_pix_df) = colnames_hot_pix_df
+	hot_pix_df = hot_pix_df[,2:dim(hot_pix_df)[2]]
+	hot_pix_df = data.frame(hot_pix_df)
+	rownames(hot_pix_df) = hot_pix_df$sys_id_str
+	
+	hot_pix_df = factorsNumeric(hot_pix_df)
+	hot_pix_df$sys_id_str = rownames(hot_pix_df)
+	
+	head(hot_pix_df)
+	
+	hot_pix_df$NDVI = (hot_pix_df$NDVI - max_min_df$min_NDVIs[i])/(max_min_df$max_NDVIs[i] - max_min_df$min_NDVIs[i])
+	hot_pix_df$Ts = (hot_pix_df$Ts - max_min_df$min_Tss[i])/(max_min_df$max_Tss[i] - max_min_df$min_Tss[i])
+	
+	hot_pix_Rn_G = ((hot_pix_df$Rn - hot_pix_df$G) - max_min_df$min_Rn_Gs)/(max_min_df$max_Rn_Gs - max_min_df$min_Rn_Gs)
+	
+	
+	hot_pix_df$Rn = (hot_pix_df$Rn - max_min_df$min_Rns[i])/(max_min_df$max_Rns[i] - max_min_df$min_Rns[i])
+	hot_pix_df$G = (hot_pix_df$G - max_min_df$min_Gs[i])/(max_min_df$max_Gs[i] - max_min_df$min_Gs[i])
+	
+	cold_pix_df = t(read.csv(cold_pix_files[i]))
+	colnames_cold_pix_df = cold_pix_df[1,]
+	cold_pix_df = cold_pix_df[2:dim(cold_pix_df)[1],]
+	colnames(cold_pix_df) = colnames_cold_pix_df
+	cold_pix_df = cold_pix_df[,2:dim(cold_pix_df)[2]]
+	cold_pix_df = data.frame(cold_pix_df)
+	rownames(cold_pix_df) = cold_pix_df$sys_id_str
+	
+	cold_pix_df = factorsNumeric(cold_pix_df)
+	cold_pix_df$sys_id_str = rownames(cold_pix_df)
+	
+	head(cold_pix_df)
+	cold_pix_df$NDVI = (cold_pix_df$NDVI - max_min_df$min_NDVIs[i])/(max_min_df$max_NDVIs[i] - max_min_df$min_NDVIs[i])
+	cold_pix_df$Ts = (cold_pix_df$Ts - max_min_df$min_Tss[i])/(max_min_df$max_Tss[i] - max_min_df$min_Tss[i])
+	
+	cold_pix_Rn_G = ((cold_pix_df$Rn - cold_pix_df$G) - max_min_df$min_Rn_Gs)/(max_min_df$max_Rn_Gs - max_min_df$min_Rn_Gs)
+	
+	cold_pix_df$Rn = (cold_pix_df$Rn - max_min_df$min_Rns[i])/(max_min_df$max_Rns[i] - max_min_df$min_Rns[i])
+	cold_pix_df$G = (cold_pix_df$G - max_min_df$min_Gs[i])/(max_min_df$max_Gs[i] - max_min_df$min_Gs[i])
+	
+	
+	hot_NDVI_mean = c(hot_NDVI_mean, mean(hot_pix_df$NDVI, na.rm = T))
+	hot_NDVI_sd = c(hot_NDVI_sd, sd(hot_pix_df$NDVI, na.rm = T))
+	hot_NDVI_cv = c(hot_NDVI_cv, sd(hot_pix_df$NDVI, na.rm = T) * 100/mean(hot_pix_df$NDVI, na.rm = T))
+	
+	hot_Ts_mean = c(hot_Ts_mean, mean(hot_pix_df$Ts, na.rm = T))
+	hot_Ts_sd = c(hot_Ts_sd, sd(hot_pix_df$Ts, na.rm = T))
+	hot_Ts_cv = c(hot_Ts_cv, sd(hot_pix_df$Ts, na.rm = T) * 100/mean(hot_pix_df$Ts, na.rm = T))
+	
+	#hot_Rn_G_mean = c(hot_Rn_G_mean, mean((hot_pix_df$Rn - hot_pix_df$G), na.rm = T))
+	#hot_Rn_G_sd = c(hot_Rn_G_sd, sd((hot_pix_df$Rn - hot_pix_df$G), na.rm = T))
+	#hot_Rn_G_cv = c(hot_Rn_G_cv, sd((hot_pix_df$Rn - hot_pix_df$G), na.rm = T) * 100/mean((hot_pix_df$Rn - hot_pix_df$G), na.rm = T))
+	
+	hot_Rn_G_mean = c(hot_Rn_G_mean, mean(hot_pix_Rn_G, na.rm = T))
+	hot_Rn_G_sd = c(hot_Rn_G_sd, sd(hot_pix_Rn_G, na.rm = T))
+	hot_Rn_G_cv = c(hot_Rn_G_cv, sd(hot_pix_Rn_G, na.rm = T) * 100/mean(hot_pix_Rn_G, na.rm = T))
+	
+	
+	cold_NDVI_mean = c(cold_NDVI_mean, mean(cold_pix_df$NDVI, na.rm = T))
+	cold_NDVI_sd = c(cold_NDVI_sd, sd(cold_pix_df$NDVI, na.rm = T))
+	cold_NDVI_cv = c(cold_NDVI_cv, sd(cold_pix_df$NDVI, na.rm = T) * 100/mean(cold_pix_df$NDVI, na.rm = T))
+	
+	cold_Ts_mean = c(cold_Ts_mean, mean(cold_pix_df$Ts, na.rm = T))
+	cold_Ts_sd = c(cold_Ts_sd, sd(cold_pix_df$Ts, na.rm = T))
+	cold_Ts_cv = c(cold_Ts_cv, sd(cold_pix_df$Ts, na.rm = T) * 100/mean(cold_pix_df$Ts, na.rm = T))
+	
+	#cold_Rn_G_mean = c(cold_Rn_G_mean, mean((cold_pix_df$Rn - cold_pix_df$G), na.rm = T))
+	#cold_Rn_G_sd = c(cold_Rn_G_sd, sd((cold_pix_df$Rn - cold_pix_df$G), na.rm = T))
+	#cold_Rn_G_cv = c(cold_Rn_G_cv, sd((cold_pix_df$Rn - cold_pix_df$G), na.rm = T) * 100/mean((cold_pix_df$Rn - cold_pix_df$G), na.rm = T))
+	
+	cold_Rn_G_mean = c(cold_Rn_G_mean, mean(cold_pix_Rn_G, na.rm = T))
+  cold_Rn_G_sd = c(cold_Rn_G_sd, sd(cold_pix_Rn_G, na.rm = T))
+  cold_Rn_G_cv = c(cold_Rn_G_cv, sd(cold_pix_Rn_G, na.rm = T) * 100/mean(cold_pix_Rn_G, na.rm = T))
+	
+}
+
+boxplot(cold_NDVI_cv, hot_NDVI_cv,
+        cold_Ts_cv, hot_Ts_cv,
+        cold_Rn_G_cv, hot_Rn_G_cv,
+        border = rep(c(0,0),3),
+        axes = F, ylab = 'Coeff of variation (%)',cex.lab = 2, lwd = 0.1)
+
+axis(1, at = c(1.5,3.5,5.5), labels = c('','',''),cex.lab = 2, cex.axis = 2, lwd = 1.5)
+axis(1, at = c(1.5,3.5,5.5), labels = c('Scaled \nNDVI','Scaled \nTs','Scaled \nAvailable \nEnergy'),cex.lab = 1.8, line= 3.8, cex.axis = 1.8, lwd = 0)
+
+axis(2, cex.lab = 2, cex.axis = 2, lwd = 2)
+box(lwd =2)
+abline(v = c(2.5, 4.5), col = 'gray', lty = 2)
+abline(h = seq(0,100,20), col = 'gray', lty = 2)
+boxplot(cold_NDVI_cv, hot_NDVI_cv,
+        cold_Ts_cv, hot_Ts_cv,
+        cold_Rn_G_cv, hot_Rn_G_cv,
+        border = rep(c('blue','red'),3),
+        axes = F, ylab = '',lwd =2, add = T)
+
+legend(0.4, 101, legend = c('Cold Pixels','Hot Pixels'), lty = 1, lwd =2, col = c('blue','red'), text.col = c('blue','red'), bg = c('white'), cex = 1.8, box.lty = 0)
+box()
+
+#boxplot(hot_NDVI_cv, hot_Ts_cv, hot_Rn_G_cv)
+
+#plot(1:length(cold_NDVI_cv), cold_NDVI_cv, 'b', col = 'blue')
+#points(1:length(cold_NDVI_cv), cold_Rn_G_cv, 'b', col = 'red')
+dev.off()
+```
+
+```{r}
+foldername = paste('J:/EE_METRIC_RESULTS_SACREMANTO140/','2013','/G',sep='')
+all_files = list.files(foldername)
+
+foldername = paste('J:/EE_METRIC_RESULTS_SACREMANTO140/','2014','/G',sep='')
+all_files = c(all_files, list.files(foldername))
+
+foldername = paste('J:/EE_METRIC_RESULTS_SACREMANTO140/','2015','/G',sep='')
+all_files = c(all_files, list.files(foldername))
+
+mydate = '2014_07_24'
+print ('Cold NDVI Cv')
+cold_NDVI_cv[grep(mydate, all_files)]
+print ('hot NDVI Cv')
+hot_NDVI_cv[grep(mydate, all_files)]
+
+print ('')
+print ('cold Ts Cv')
+cold_Ts_cv[grep(mydate, all_files)]
+print ('hot Ts Cv')
+hot_Ts_cv[grep(mydate, all_files)]
+
+print ('')
+print ('cold Rn-G Cv')
+cold_Rn_G_cv[grep(mydate, all_files)]
+print ('hot Rn-G Cv')
+hot_Rn_G_cv[grep(mydate, all_files)]
+```
+
+
+```{r}
+# Annual ET and Precip
+
+```
+
+
+```{r}
+# Plot for the reviewer
+wd = "C:/Users/Sulochan/Google Drive/METRIC Earth Engine Jupyter Notebook/METRIC csv/Validation"
+list_of_files = list.files(wd)
+list_of_files_hot1 = list_of_files[grepl( "hot_pix_df_Sacramento140", list_of_files)]
+list_of_files_cold1 = list_of_files[grepl( "cold_pix_df_Sacramento140", list_of_files)]
+unlisted_filenames = unlist(strsplit(list_of_files_cold1,"_"))
+yrs = unlisted_filenames[seq(7,length(unlisted_filenames),11)]
+mos = unlisted_filenames[seq(8,length(unlisted_filenames),11)]
+das = unlisted_filenames[seq(9,length(unlisted_filenames),11)]
+all_dates = as.Date(paste(yrs,mos,das,sep="/"), "%Y/%m/%d")
+all_dates_str = strftime(all_dates, "%Y-%m-%d")
+dates_to_be_used = read.csv("C:/Users/Sulochan/Google Drive/US_Tw3 Validation/R_Stuff/use_dates.csv", header =F)
+dates_to_be_used = as.Date(levels(dates_to_be_used[,1]), "%m/%d/%Y")
+
+ind_dates = sort(match(dates_to_be_used, all_dates))
+
+list_of_files_cold2 = list_of_files_cold1[ind_dates]
+list_of_files_cold = paste(wd, "/",list_of_files_cold2,sep="")
+maxn_cold = 0
+for (i in 1:length(list_of_files_cold)){
+  cold_df_dT_str = t(read.csv(list_of_files_cold[i], header = F))[,32] #32 for cold
+  cold_df_dT = as.numeric(cold_df_dT_str[2:length(cold_df_dT_str)])
+  maxn_cold = max(maxn_cold, length(cold_df_dT))
+}
+
+dT_cold_for_plot = matrix(NA, ncol = length(list_of_files_cold), nrow = maxn_cold)
+for (i in 1:length(list_of_files_cold)){
+  cold_df_dT_str = t(read.csv(list_of_files_cold[i], header = F))[,32]
+  cold_df_dT = as.numeric(cold_df_dT_str[2:length(cold_df_dT_str)])
+  rowvals_cold = rep(NA, nrow(dT_cold_for_plot))
+  rowvals_cold[1:length(cold_df_dT)] = cold_df_dT
+  dT_cold_for_plot[,i] = rowvals_cold
+}
+boxplot(dT_cold_for_plot)
+colnames(dT_cold_for_plot) = format(sort(dates_to_be_used), "%m_%d_%Y")
+
+list_of_files_hot2 = list_of_files_hot1[ind_dates]
+list_of_files_hot = paste(wd, "/",list_of_files_hot2,sep="")
+maxn_hot = 0
+for (i in 1:length(list_of_files_hot)){
+  hot_df_dT_str = t(read.csv(list_of_files_hot[i], header = F))[,35] #32 for cold
+  hot_df_dT = as.numeric(hot_df_dT_str[2:length(hot_df_dT_str)])
+  maxn_hot = max(maxn_hot, length(hot_df_dT))
+}
+
+dT_hot_for_plot = matrix(NA, ncol = length(list_of_files_hot), nrow = maxn_hot)
+for (i in 1:length(list_of_files_hot)){
+  hot_df_dT_str = t(read.csv(list_of_files_hot[i], header = F))[,35]
+  hot_df_dT = as.numeric(hot_df_dT_str[2:length(hot_df_dT_str)])
+  rowvals_hot = rep(NA, nrow(dT_hot_for_plot))
+  rowvals_hot[1:length(hot_df_dT)] = hot_df_dT
+  dT_hot_for_plot[,i] = rowvals_hot
+}
+boxplot(dT_hot_for_plot)
+colnames(dT_hot_for_plot) = format(sort(dates_to_be_used), "%m_%d_%Y")
+
+boxplot(dT_cold_for_plot,ylim = c(-4,7), border = 'blue', cex =0.2, axes =F)
+boxplot(dT_hot_for_plot, add = T, border = 'red',cex =0.2, axes = F)
+axis(1, at = 1:length(all_dates_str[ind_dates]), all_dates_str[ind_dates], las =2)
+axis(2)
+box()
+grid()
+```
+
+```{r}
+
+colnames_2013 = seq.Date(as.Date('2013-06-01'),as.Date('2013-11-01'), by = '1 day')
+colnames_2014 = seq.Date(as.Date('2014-05-01'),as.Date('2014-11-01'), by = '1 day')
+colnames_2015 = seq.Date(as.Date('2015-04-01'),as.Date('2015-11-01'), by = '1 day')
+
+ind_col_2013 = sort(match(dates_to_be_used, colnames_2013))
+ind_col_2014 = sort(match(dates_to_be_used, colnames_2014))
+ind_col_2015 = sort(match(dates_to_be_used, colnames_2015))
+
+pdf("Distribution of dT.pdf", width = 8, height = 5)
+op <- par(no.readonly = TRUE)
+par (oma = c(1,3,1,1))
+layout(matrix(c(1,2,3), 1, 3, byrow = TRUE))
+par(mai = c(1.2,0.2,0.2,0.1))
+
+dT_cold_for_plot_yr_2013 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2013))
+dT_hot_for_plot_yr_2013 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2013))
+
+dT_cold_for_plot_yr_2013[,ind_col_2013] = dT_cold_for_plot[,1:16]
+boxplot(dT_cold_for_plot_yr_2013, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(-4,7),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2013[,ind_col_2013] = dT_hot_for_plot[,1:16]
+boxplot(dT_hot_for_plot_yr_2013, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+
+
+dates_for_axis_start = as.Date(strptime('2013-06-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2013-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(-4,7,1), lty =2, col = 'lightgray', lwd = 0.5)
+mtext(2,text = expression(""* ~degree*C), line = 2)
+mtext(1, text = "2013", line = 4)
+
+
+
+
+dT_cold_for_plot_yr_2014 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2014))
+dT_hot_for_plot_yr_2014 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2014))
+
+dT_cold_for_plot_yr_2014[,ind_col_2014] = dT_cold_for_plot[,17:25]
+boxplot(dT_cold_for_plot_yr_2014, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(-4,7),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2014[,ind_col_2014] = dT_hot_for_plot[,17:25]
+boxplot(dT_hot_for_plot_yr_2014, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+
+dates_for_axis_start = as.Date(strptime('2014-05-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2014-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+#axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(-4,7,1), lty =2, col = 'lightgray', lwd = 0.5)
+mtext(1, text = "2014", line = 4)
+mtext(side = 3, text = "dT", line = 0.5, cex = 1.25)
+
+
+
+
+
+
+
+
+dT_cold_for_plot_yr_2015 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2015))
+dT_hot_for_plot_yr_2015 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2015))
+
+dT_cold_for_plot_yr_2015[,ind_col_2015] = dT_cold_for_plot[,26:42]
+boxplot(dT_cold_for_plot_yr_2015, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(-4,7),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2015[,ind_col_2015] = dT_hot_for_plot[,26:42]
+boxplot(dT_hot_for_plot_yr_2015, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+
+
+dates_for_axis_start = as.Date(strptime('2015-04-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2015-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+#axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(-4,7,1), lty =2, col = 'lightgray', lwd = 0.5)
+mtext(1, text = "2015", line = 4)
+
+legend(as.numeric(as.Date("2015-08-01") - as.numeric(dates_for_axis)[1]), -3,
+       c('Hot Pixels', 'Cold Pixels'),
+       col = c('red', 'blue'),
+       lty = c(1,1), bty = 'n')
+dev.off()
+
+```
+
+
+```{r}
+# Plot for the reviewer (SAVI)
+wd = "C:/Users/Sulochan/Google Drive/METRIC Earth Engine Jupyter Notebook/METRIC csv/Validation"
+list_of_files = list.files(wd)
+list_of_files_hot1 = list_of_files[grepl( "hot_pix_df_Sacramento140", list_of_files)]
+list_of_files_cold1 = list_of_files[grepl( "cold_mean_SAVI", list_of_files)]
+unlisted_filenames = unlist(strsplit(list_of_files_hot1,"_"))
+yrs = unlisted_filenames[seq(7,length(unlisted_filenames),11)]
+mos = unlisted_filenames[seq(8,length(unlisted_filenames),11)]
+das = unlisted_filenames[seq(9,length(unlisted_filenames),11)]
+all_dates = as.Date(paste(yrs,mos,das,sep="/"), "%Y/%m/%d")
+all_dates_str = strftime(all_dates, "%Y-%m-%d")
+dates_to_be_used = read.csv("C:/Users/Sulochan/Google Drive/US_Tw3 Validation/R_Stuff/use_dates.csv", header =F)
+dates_to_be_used = as.Date(levels(dates_to_be_used[,1]), "%m/%d/%Y")
+
+ind_dates_hot = sort(match(dates_to_be_used, all_dates))
+
+unlisted_filenames_cold = unlist(strsplit(list_of_files_cold1,"_"))
+yrs = unlisted_filenames_cold[seq(4,length(unlisted_filenames_cold),8)]
+mos = unlisted_filenames_cold[seq(5,length(unlisted_filenames_cold),8)]
+das = unlisted_filenames_cold[seq(6,length(unlisted_filenames_cold),8)]
+all_dates_cold = as.Date(paste(yrs,mos,das,sep="/"), "%Y/%m/%d")
+all_dates_cold_str = strftime(all_dates_cold, "%Y-%m-%d")
+
+ind_dates_cold = sort(match(dates_to_be_used, all_dates_cold))
+
+ind_dates = intersect(ind_dates_hot, ind_dates_cold)
+
+
+list_of_files_cold2 = list_of_files_cold1[ind_dates_cold]
+list_of_files_cold = paste(wd, "/",list_of_files_cold2,sep="")
+maxn_cold = 0
+for (i in 1:length(list_of_files_cold)){
+  #cold_df_dT_str = t(read.csv(list_of_files_cold[i], header = F))[,9] #9 for cold SAVI
+  #cold_df_dT = as.numeric(cold_df_dT_str[2:length(cold_df_dT_str)])
+  cold_df_dT = read.csv(list_of_files_cold[i], header = T)[,2]
+  maxn_cold = max(maxn_cold, length(cold_df_dT))
+}
+
+dT_cold_for_plot = matrix(NA, ncol = length(list_of_files_cold), nrow = maxn_cold)
+for (i in 1:length(list_of_files_cold)){
+  #cold_df_dT_str = t(read.csv(list_of_files_cold[i], header = F))[,9]
+  #cold_df_dT = as.numeric(cold_df_dT_str[2:length(cold_df_dT_str)])
+  cold_df_dT = read.csv(list_of_files_cold[i], header = T)[,2]
+  rowvals_cold = rep(NA, nrow(dT_cold_for_plot))
+  rowvals_cold[1:length(cold_df_dT)] = cold_df_dT
+  dT_cold_for_plot[,i] = rowvals_cold
+}
+boxplot(dT_cold_for_plot)
+colnames(dT_cold_for_plot) = format(sort(dates_to_be_used), "%m_%d_%Y")
+
+list_of_files_hot2 = list_of_files_hot1[ind_dates_hot]
+list_of_files_hot = paste(wd, "/",list_of_files_hot2,sep="")
+maxn_hot = 0
+for (i in 1:length(list_of_files_hot)){
+  hot_df_dT_str = t(read.csv(list_of_files_hot[i], header = F))[,9] #9 for hot SAVI
+  hot_df_dT = as.numeric(hot_df_dT_str[2:length(hot_df_dT_str)])
+  maxn_hot = max(maxn_hot, length(hot_df_dT))
+}
+
+dT_hot_for_plot = matrix(NA, ncol = length(list_of_files_hot), nrow = maxn_hot)
+for (i in 1:length(list_of_files_hot)){
+  hot_df_dT_str = t(read.csv(list_of_files_hot[i], header = F))[,9]
+  hot_df_dT = as.numeric(hot_df_dT_str[2:length(hot_df_dT_str)])
+  rowvals_hot = rep(NA, nrow(dT_hot_for_plot))
+  rowvals_hot[1:length(hot_df_dT)] = hot_df_dT
+  dT_hot_for_plot[,i] = rowvals_hot
+}
+boxplot(dT_hot_for_plot)
+colnames(dT_hot_for_plot) = format(sort(dates_to_be_used), "%m_%d_%Y")
+
+boxplot(dT_cold_for_plot,ylim = c(0,1), border = 'blue', cex =0.2, axes =F)
+boxplot(dT_hot_for_plot, add = T, border = 'red',cex =0.2, axes = F)
+axis(1, at = 1:length(all_dates_str[ind_dates]), all_dates_str[ind_dates], las =2)
+axis(2)
+box()
+grid()
+```
+
+
+
+```{r}
+
+colnames_2013 = seq.Date(as.Date('2013-06-01'),as.Date('2013-11-01'), by = '1 day')
+colnames_2014 = seq.Date(as.Date('2014-05-01'),as.Date('2014-11-01'), by = '1 day')
+colnames_2015 = seq.Date(as.Date('2015-04-01'),as.Date('2015-11-01'), by = '1 day')
+
+ind_col_2013 = sort(match(dates_to_be_used, colnames_2013))
+ind_col_2014 = sort(match(dates_to_be_used, colnames_2014))
+ind_col_2015 = sort(match(dates_to_be_used, colnames_2015))
+
+pdf("Distribution of SAVI.pdf", width = 8, height = 5)
+op <- par(no.readonly = TRUE)
+par (oma = c(1,3,1,1))
+layout(matrix(c(1,2,3), 1, 3, byrow = TRUE))
+par(mai = c(1.2,0.2,0.2,0.1))
+
+dT_cold_for_plot_yr_2013 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2013))
+dT_hot_for_plot_yr_2013 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2013))
+
+dT_cold_for_plot_yr_2013[,ind_col_2013] = dT_cold_for_plot[,1:16]
+boxplot(dT_cold_for_plot_yr_2013, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(0,1),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2013[,ind_col_2013] = dT_hot_for_plot[,1:16]
+boxplot(dT_hot_for_plot_yr_2013, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+abline(h=0.7, lty =3)
+
+dates_for_axis_start = as.Date(strptime('2013-06-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2013-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(-4,7,1), lty =2, col = 'lightgray', lwd = 0.5)
+#mtext(2,text = expression(""* ~degree*C), line = 2)
+mtext(1, text = "2013", line = 4)
+
+
+
+
+dT_cold_for_plot_yr_2014 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2014))
+dT_hot_for_plot_yr_2014 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2014))
+
+dT_cold_for_plot_yr_2014[,ind_col_2014] = dT_cold_for_plot[,17:25]
+boxplot(dT_cold_for_plot_yr_2014, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(0,1),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2014[,ind_col_2014] = dT_hot_for_plot[,17:25]
+boxplot(dT_hot_for_plot_yr_2014, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+abline(h=0.7, lty =3)
+
+dates_for_axis_start = as.Date(strptime('2014-05-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2014-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+#axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(-4,7,1), lty =2, col = 'lightgray', lwd = 0.5)
+mtext(1, text = "2014", line = 4)
+mtext(side = 3, text = "SAVI", line = 0.5, cex = 1.25)
+
+
+
+
+
+
+
+
+dT_cold_for_plot_yr_2015 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2015))
+dT_hot_for_plot_yr_2015 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2015))
+
+dT_cold_for_plot_yr_2015[,ind_col_2015] = dT_cold_for_plot[,26:42]
+boxplot(dT_cold_for_plot_yr_2015, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(0,1),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2015[,ind_col_2015] = dT_hot_for_plot[,26:42]
+boxplot(dT_hot_for_plot_yr_2015, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+abline(h=0.7, lty =3)
+
+dates_for_axis_start = as.Date(strptime('2015-04-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2015-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+#axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(-4,7,1), lty =2, col = 'lightgray', lwd = 0.5)
+mtext(1, text = "2015", line = 4)
+
+legend(as.numeric(as.Date("2015-08-01") - as.numeric(dates_for_axis)[1]), 1.05,
+       c('Hot Pixels', 'Cold Pixels'),
+       col = c('red', 'blue'),
+       lty = c(1,1),
+       lwd = c(1.5, 1.5),
+       bty = 'n')
+dev.off()
+
+```
+
+
+
+
+
+
+
+```{r}
+# Plot for the reviewer (NDVI)
+wd = "C:/Users/Sulochan/Google Drive/METRIC Earth Engine Jupyter Notebook/METRIC csv/Validation"
+list_of_files = list.files(wd)
+list_of_files_hot1 = list_of_files[grepl( "hot_pix_df_Sacramento140", list_of_files)]
+list_of_files_cold1 = list_of_files[grepl( "cold_pix_df_Sacramento140", list_of_files)]
+unlisted_filenames = unlist(strsplit(list_of_files_cold1,"_"))
+yrs = unlisted_filenames[seq(7,length(unlisted_filenames),11)]
+mos = unlisted_filenames[seq(8,length(unlisted_filenames),11)]
+das = unlisted_filenames[seq(9,length(unlisted_filenames),11)]
+all_dates = as.Date(paste(yrs,mos,das,sep="/"), "%Y/%m/%d")
+all_dates_str = strftime(all_dates, "%Y-%m-%d")
+dates_to_be_used = read.csv("C:/Users/Sulochan/Google Drive/US_Tw3 Validation/R_Stuff/use_dates.csv", header =F)
+dates_to_be_used = as.Date(levels(dates_to_be_used[,1]), "%m/%d/%Y")
+
+ind_dates = sort(match(dates_to_be_used, all_dates))
+
+list_of_files_cold2 = list_of_files_cold1[ind_dates]
+list_of_files_cold = paste(wd, "/",list_of_files_cold2,sep="")
+maxn_cold = 0
+for (i in 1:length(list_of_files_cold)){
+  cold_df_dT_str = t(read.csv(list_of_files_cold[i], header = F))[,6] #32 for cold
+  cold_df_dT = as.numeric(cold_df_dT_str[2:length(cold_df_dT_str)])
+  maxn_cold = max(maxn_cold, length(cold_df_dT))
+}
+
+dT_cold_for_plot = matrix(NA, ncol = length(list_of_files_cold), nrow = maxn_cold)
+for (i in 1:length(list_of_files_cold)){
+  cold_df_dT_str = t(read.csv(list_of_files_cold[i], header = F))[,6]
+  cold_df_dT = as.numeric(cold_df_dT_str[2:length(cold_df_dT_str)])
+  rowvals_cold = rep(NA, nrow(dT_cold_for_plot))
+  rowvals_cold[1:length(cold_df_dT)] = cold_df_dT
+  dT_cold_for_plot[,i] = rowvals_cold
+}
+boxplot(dT_cold_for_plot)
+colnames(dT_cold_for_plot) = format(sort(dates_to_be_used), "%m_%d_%Y")
+
+list_of_files_hot2 = list_of_files_hot1[ind_dates]
+list_of_files_hot = paste(wd, "/",list_of_files_hot2,sep="")
+maxn_hot = 0
+for (i in 1:length(list_of_files_hot)){
+  hot_df_dT_str = t(read.csv(list_of_files_hot[i], header = F))[,5] #32 for cold
+  hot_df_dT = as.numeric(hot_df_dT_str[2:length(hot_df_dT_str)])
+  maxn_hot = max(maxn_hot, length(hot_df_dT))
+}
+
+dT_hot_for_plot = matrix(NA, ncol = length(list_of_files_hot), nrow = maxn_hot)
+for (i in 1:length(list_of_files_hot)){
+  hot_df_dT_str = t(read.csv(list_of_files_hot[i], header = F))[,5]
+  hot_df_dT = as.numeric(hot_df_dT_str[2:length(hot_df_dT_str)])
+  rowvals_hot = rep(NA, nrow(dT_hot_for_plot))
+  rowvals_hot[1:length(hot_df_dT)] = hot_df_dT
+  dT_hot_for_plot[,i] = rowvals_hot
+}
+boxplot(dT_hot_for_plot)
+colnames(dT_hot_for_plot) = format(sort(dates_to_be_used), "%m_%d_%Y")
+
+boxplot(dT_cold_for_plot,ylim = c(0,1), border = 'blue', cex =0.2, axes =F)
+boxplot(dT_hot_for_plot, add = T, border = 'red',cex =0.2, axes = F)
+axis(1, at = 1:length(all_dates_str[ind_dates]), all_dates_str[ind_dates], las =2)
+axis(2)
+box()
+grid()
+```
+
+```{r}
+
+colnames_2013 = seq.Date(as.Date('2013-06-01'),as.Date('2013-11-01'), by = '1 day')
+colnames_2014 = seq.Date(as.Date('2014-05-01'),as.Date('2014-11-01'), by = '1 day')
+colnames_2015 = seq.Date(as.Date('2015-04-01'),as.Date('2015-11-01'), by = '1 day')
+
+ind_col_2013 = sort(match(dates_to_be_used, colnames_2013))
+ind_col_2014 = sort(match(dates_to_be_used, colnames_2014))
+ind_col_2015 = sort(match(dates_to_be_used, colnames_2015))
+
+pdf("Distribution of NDVI.pdf", width = 8, height = 5)
+op <- par(no.readonly = TRUE)
+par (oma = c(1,3,1,1))
+layout(matrix(c(1,2,3), 1, 3, byrow = TRUE))
+par(mai = c(1.2,0.2,0.2,0.1))
+
+dT_cold_for_plot_yr_2013 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2013))
+dT_hot_for_plot_yr_2013 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2013))
+
+dT_cold_for_plot_yr_2013[,ind_col_2013] = dT_cold_for_plot[,1:16]
+boxplot(dT_cold_for_plot_yr_2013, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(0,1),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2013[,ind_col_2013] = dT_hot_for_plot[,1:16]
+boxplot(dT_hot_for_plot_yr_2013, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+
+
+dates_for_axis_start = as.Date(strptime('2013-06-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2013-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(0,1,0.2), lty =2, col = 'lightgray', lwd = 0.5)
+mtext(2,text = expression(""* ~degree*C), line = 2)
+mtext(1, text = "2013", line = 4)
+
+
+
+
+dT_cold_for_plot_yr_2014 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2014))
+dT_hot_for_plot_yr_2014 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2014))
+
+dT_cold_for_plot_yr_2014[,ind_col_2014] = dT_cold_for_plot[,17:25]
+boxplot(dT_cold_for_plot_yr_2014, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(0,1),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2014[,ind_col_2014] = dT_hot_for_plot[,17:25]
+boxplot(dT_hot_for_plot_yr_2014, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+
+dates_for_axis_start = as.Date(strptime('2014-05-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2014-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+#axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(0,1,0.2), lty =2, col = 'lightgray', lwd = 0.5)
+mtext(1, text = "2014", line = 4)
+mtext(side = 3, text = "dT", line = 0.5, cex = 1.25)
+
+
+
+
+
+
+
+
+dT_cold_for_plot_yr_2015 = matrix(NA, nrow = maxn_cold, ncol = length(colnames_2015))
+dT_hot_for_plot_yr_2015 = matrix(NA, nrow = maxn_hot, ncol = length(colnames_2015))
+
+dT_cold_for_plot_yr_2015[,ind_col_2015] = dT_cold_for_plot[,26:42]
+boxplot(dT_cold_for_plot_yr_2015, lwd =1, border = 'blue',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), ylim =c(0,1),axes = F)
+abline(h = 0, lty =2, col = 'gray',lwd =1)
+dT_hot_for_plot_yr_2015[,ind_col_2015] = dT_hot_for_plot[,26:42]
+boxplot(dT_hot_for_plot_yr_2015, lwd =1, border = 'red',pars = list(boxwex = 5, staplewex = 0.5, outwex = 0.5), add = T, axes = F)
+
+
+dates_for_axis_start = as.Date(strptime('2015-04-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis_end = as.Date(strptime('2015-11-01','%Y-%m-%d', tz = 'US/Pacific'))
+dates_for_axis = seq(dates_for_axis_start, dates_for_axis_end, by = '1 month')
+axis(1, as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, labels = format(dates_for_axis, '%m-%d'), las = 2, cex.axis = 1)
+#axis(2)
+box()
+abline(v = as.numeric(dates_for_axis) - as.numeric(dates_for_axis)[1] +1, lty =2, col = 'lightgray', lwd = 0.5)
+abline(h = seq(0,1,0.2), lty =2, col = 'lightgray', lwd = 0.5)
+mtext(1, text = "2015", line = 4)
+
+legend(as.numeric(as.Date("2015-08-01") - as.numeric(dates_for_axis)[1]), 0.85,
+       c('Hot Pixels', 'Cold Pixels'),
+       col = c('red', 'blue'),
+       lty = c(1,1), bty = 'n')
+dev.off()
+
+```
+
+```{r}
+
+ppt_file = read.csv('C:/Users/Sulochan/Google Drive/METRIC Earth Engine Jupyter Notebook/Weather Data/SacrementoWeatherData/Sacramento140daily.csv')
+ppt_TS = levels(factor(ppt_file$TIMESTAMP))[factor(ppt_file$TIMESTAMP)]
+ppt_TS = as.Date(strptime(ppt_TS, format = '%m/%d/%Y'))
+
+ind = which(ppt_TS > as.Date("2015-06-20") & ppt_TS < as.Date("2015-06-30"))
+plot(ppt_TS[ind], 20 - ppt_file$ETo_mm[ind]/4, 'l', col ='darkgray', lwd = 2)
+
+```
+
+
+```{r}
+
+ppt_file = read.csv('C:/Users/Sulochan/Google Drive/METRIC Earth Engine Jupyter Notebook/Weather Data/SacrementoWeatherData/Sacramento140.csv')#Sacramento140daily.csv')
+ppt_TS = levels(factor(ppt_file$TIMESTAMP))[factor(ppt_file$TIMESTAMP)]
+ppt_TS = strptime(ppt_TS, format = '%m/%d/%y %H:%M')
+
+ind = which(ppt_TS >= strptime("06/20/2015 00:00", format = '%m/%d/%Y %H:%M') & ppt_TS <= strptime("06/30/2015 00:00", format = '%m/%d/%Y %H:%M'))
+rain = as.numeric(levels(factor(ppt_file$Rain_mm_Tot))[factor(ppt_file$Rain_mm_Tot)])
+wind = as.numeric(levels(factor(ppt_file$WS_ms_Avg))[factor(ppt_file$WS_ms_Avg)])
+airT = as.numeric(levels(factor(ppt_file$AirTC_Avg))[factor(ppt_file$AirTC_Avg)])
+
+plot(ppt_TS[ind], airT[ind], 'l', col ='darkgray', lwd = 2)
+
+
+ind = which(dt >= strptime("04/30/2015 00:00", format = '%m/%d/%Y %H:%M') & dt <= strptime("04/30/2015 23:30", format = '%m/%d/%Y %H:%M'))
+
+ plot(dt[ind], AmFlux_data$H[ind], 'l',axes = F)
+ #axis(1, at = as.numeric(dt[ind][seq(1,96,24)]), labels = format(dt[ind][seq(1,96,24)], "%m/%d %H:%M"), las =1)
+ axis(1, at = as.numeric(dt[ind]), labels = format(dt[ind], "%m/%d %H:%M"), las =1)
+ abline(h=0)
+ axis(2)
+ grid()
+```
+
+```{r}
+#install.packages("rgdal", type = "source", configure.args = "--with-gdal-config=/Library/Frameworks/GDAL.framework/Versions/1.11/unix/bin/gdal-config --with-proj-include=/Library/Frameworks/PROJ.framework/unix/include --with-proj-lib=/Library/Frameworks/PROJ.framework/unix/lib")
+library(geojsonio)
+xx = 'C:/Users/Sulochan/Google Drive/Validation_Sacramento140_Sacramento/calib_pix_zom_Sacramento140_2014_07_24_11_45.kml'
+out <- geojson_read(xx, what = 'list')
+#library(GISTools)
+library(rgdal)
+
+writeOGR(obj=out, dsn = 'C:/Users/Sulochan/Google Drive/Validation_Sacramento140_Sacramento', layer="out", driver="ESRI Shapefile")
+
+names(out)
+names(out$features[[1]])
+
+gsp = geojson_sp(out)
+
+```
+
+```{r}
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
