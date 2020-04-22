@@ -1,0 +1,529 @@
+---
+output: html_document
+---
+  # Advanced Geographical Statistics
+  
+  ##Assignment 9
+  
+  *GEOG 6000*
+  
+  **Date: 12/02/2015**
+  
+  **Sulochan Dhungel**
+  
+##$Answer 1$##
+```{r results='hide', echo=TRUE, warning=FALSE,message=FALSE }
+#rm(list = ls())
+setwd("C:/Users/Sulochan/Copy/Fall 2015/Advance Geo/Assignment 9")
+require(maptools)
+require(spdep)
+require(spgwr)
+require(mgcv)
+require(maps)
+#install.packages("classInt",repos="http://cran.us.r-project.org")
+library(classInt)
+#install.packages("RColorBrewer",repos="http://cran.us.r-project.org")
+library(RColorBrewer)
+require(spatstat)
+def.par <- par(no.readonly = TRUE) # save default, for resetting...
+```
+<br>
+```{r results='show', echo=TRUE, warning=FALSE}
+bos = readShapeSpatial("boston.shp")
+
+layout(matrix(c(1,2), 1, 2, byrow = TRUE))
+
+map('county', 'massachusetts', fill = FALSE, col = "black",add=F)
+title(main = "Study Locations \n Boston, Massachusetts",line=1)
+points(bos@data$LON,bos@data$LAT,col="gray",bg="blue",pch=21)
+box()
+
+plot(bos@data$LON,bos@data$LAT,col="gray",bg="blue",pch=21,
+     xlab = "Longitude", ylab = "Latitude",
+     main = "Study Locations")
+axis(1)
+axis(2)
+box()
+```
+<br>
+$Preliminary  Investigation  of  Variables$
+```{r results='show', echo=TRUE, warning=FALSE}
+
+bos.data = bos@data
+head(bos.data)
+
+long_ = bos.data$LON
+lat_ = bos.data$LAT
+
+bos.header = colnames(bos.data)
+
+par(def.par)
+```
+<br>
+I developed a function which would help to plot the histogram, boxplot, qq-plot and spatial distribution of each variable. 
+<br>
+```{r results='show', echo=TRUE, warning=FALSE}
+plotvar = function(data_,var){
+  layout(matrix(c(1,2,3,4,4,5), 2, 3, byrow = TRUE))
+ 
+  hist(data_, main = paste("Histogram of ",var,sep=""))
+  boxplot(data_, main = paste("Boxplot of ",var,sep=""))
+  
+  qqnorm(data_, main = paste("Normal Q-Q of ",var,sep=""))
+  qqline(data_,col=2)  
+  
+  nclr = 9
+  plotvar = data_
+  class = classIntervals(plotvar, nclr, style = "pretty")
+  plotclr = brewer.pal(nclr, "YlOrRd")
+  colcode = findColours(class, plotclr, digits = 3)
+  plot(bos@data$LON,bos@data$LAT,bg=colcode,col="gray",xlim = c(-71.3,-70.75),pch=21,cex=1
+       ,xlab = "Longitude", ylab = "Latitude")
+  title(main = var,line=2)
+  legend("topright", legend = names(attr(colcode,"table")),
+         fill = attr(colcode, "palette"),ncol=1,cex=0.85)
+  axis(1)
+  axis(2)
+  box()
+  plot(1, type="n", axes=F, xlab="", ylab="")
+  par(def.par)
+  return()
+}
+```
+<br>
+Selected variables based on what is NOT constant per tract. Since some variables have been specified as being constant for the tract and we need to model house prices per tract, we will only select the following variables.
+<br>
+```{r results='show', echo=TRUE, warning=FALSE}
+vars_selected = c("CMEDV",
+                  "CRIM",
+                  "CHAS",
+                  "NOX",
+                  "RM",
+                  "AGE",
+                  "DIS",
+                  "B",
+                  "LSTAT")
+```
+
+<br>
+**CMEDV - Corrected  median values of owner-occupied housing in USD**
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+plotvar(bos.data$CMEDV, "CMEDV")
+```
+<br>
+The raw variable is skewed but does not have zero values, so it will be log-transformed.After log transformation, the variable is normally distributed.
+<br> 
+This is the response variable which we need to model.
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+log_CMEDV = log(bos.data$CMEDV)
+plotvar(log_CMEDV,"log of CMEDV")
+```
+<br><br><br>
+
+**1 CRIM - Per capita crime rate**
+```{r results='hide', echo=TRUE, warning=FALSE}
+plotvar(bos.data$CRIM,"CRIME RATE")
+```
+<br>
+This variable is also highly skewed. So a log transform will be applied.
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+log_CRIM = log(bos.data$CRIM)
+plotvar(log_CRIM,"Log of Crime Rate")
+```
+<br>
+Log transforms the variable into normal distribution. This variable will be taken in the model.
+<br>
+
+**2 CHAS - a factor with levels 1 if tract borders Charles River; 0 otherwise**
+<br><br>
+Since this variable is binary, we convert it into factor.
+<br>
+```{r results='show', echo=TRUE, warning=FALSE}
+bin_chas = as.factor(bos.data$CHAS)
+```
+<br>
+**3 NOX - Nitric oxides concentration (parts per 10 million) per town**
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+plotvar((bos.data$NOX),"Conc of Nitric Oxide")
+```
+<br> Since this variable is slightly skewed and log or other transformation did not help much, I kept the variable as it is without transformation.
+<br><br>
+**4 RM - Average numbers of rooms per dwelling**
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+plotvar((bos.data$RM),"Avg No of Rooms \n per Dwelling")
+```
+
+<br>
+This variable is also normally distributed and does not need any transformation.
+<br><br>
+
+**5 AGE - Proportion of owner-occupied units built prior to 1940**
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+plotvar((bos.data$AGE),"Prop of units built \n before 1940 (AGE)")
+```
+<br> This variable is the proportion of houses. So, we can convert AGE into value between 0 and 1. Since dividing by max value (100) resulted in 1, which prevented the use of logit transformation, we divided the age by 99 and performed a logit transform. This transformed the data into normal distribution.
+<br><br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+AGE = bos.data$AGE/101
+logit_AGE = log(AGE/(1-AGE))
+plotvar(logit_AGE,"Logit \n Transformed AGE")
+```
+<br>
+
+**6 DIS  Weighted distance to five Boston employment centres**
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+plotvar((bos.data$DIS),"Weighted Distance \n to Emp Ceter (DIS)")
+```
+<br>
+Since this variable is slightly positive skewed we can use a log transformation.
+```{r results='hide', echo=TRUE, warning=FALSE}
+DIS = bos.data$DIS
+log_DIS = log(DIS)
+plotvar(log_DIS,"Weighted Distance \n to Emp Ceter (DIS)")
+```
+
+**7 B A numeric vector with some formula indicating the proportion of blacks**
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+B = bos.data$B
+B1 = sqrt(B/1000)+0.63
+plotvar(B,"Vector indicating \n prop of Blacks (B)")
+```
+<br>
+This variable was notoriously skewed and no transformation applied helped. I applied transfomations based on ladder of powers but not helped. I finally decided to use untransformed variable.
+<br>
+
+```{r results='hide', echo=TRUE, warning=FALSE}
+log_B = log(B)
+plotvar((log_B),"Log of B")
+```
+<br>
+**8 LSTAT Percentage values of lower status population**
+<br>
+```{r results='hide', echo=TRUE, warning=FALSE}
+LSTAT = bos.data$LSTAT
+plotvar(LSTAT,"Lower Stat Popn \n Percentage (LSTAT)")
+```
+<br>
+This variable is normally distributed so no transformation was applied.<br>
+<br>
+<br>
+<br>
+**MAKING THE DATASET FOR MODEL**
+```{r results='show', echo=TRUE, warning=FALSE}
+Boston = data.frame(logT_CMEDV = log_CMEDV,
+                    logT_CRIME = log_CRIM,
+                    CHAS = bin_chas,
+                    NOX = bos.data$NOX,
+                    RM = bos.data$RM,
+                    lgtT_AGE = logit_AGE,
+                    logT_DIS = log_DIS,
+                    B = bos.data$B,
+                    LSTAT = bos.data$LSTAT)
+head(Boston)
+
+lm.r =  lm(logT_CMEDV ~ . , data=Boston)
+summary(lm.r)
+```
+<br>
+This summary statistics shows that almost all of the variables (except Age) is significant. With higher Crimes, Nitrous Oxide, distance to employment center and low status housing, there seems to be a decrease in house prices while houses closer to river and with more rooms show increases in house pricing. The slope of black propotion is very less as well as it is very skewed so, I do not have high confidence in its interpretation.
+<br>
+R-squared is also about 0.7 which shows that about 70% variability is explained by these variables and with a high F-statistics and low p-value, we can say that at least some of the variables have significant effect on the response.
+<br><br>
+```{r results='show', echo=TRUE, warning=FALSE}
+  nclr = 6
+  plotvar = lm.r$residuals
+  class = classIntervals(plotvar, nclr, style = "pretty")
+  plotclr = brewer.pal(nclr, "YlOrRd")
+  colcode = findColours(class, plotclr, digits = 3)
+  plot(bos@data$LON,bos@data$LAT,col=colcode,xlim = c(-71.3,-70.75),pch=16,cex=1
+       ,xlab = "Longitude", ylab = "Latitude")
+  title(main = "Residuals of OLS",line=2)
+  legend("topright", legend = names(attr(colcode,"table")),
+         fill = attr(colcode, "palette"),ncol=1,cex=0.85)
+  axis(1)
+  axis(2)
+  box()
+```
+<br>
+The residual plots of OLS shows a strong spatial pattern, which shows that the residuals are not independent.
+<br>
+We now test the spatial autocorrelation of the residuals of this model. We will use Moran's I with correction for model residuals since standard Moran's I test with model residuals is biased.
+<br>
+We also need a spatial weight matrix for moran's I test. So, I used k-nearest neighbor method to make spatial weight matrix.
+<br><br>
+**Forming spatial weight matrix**
+```{r results='show', echo=TRUE, warning=FALSE}
+  coords = coordinates(bos)
+  bos.knn = knearneigh(coords,k=4)
+  bos.nb = knn2nb(bos.knn)
+  bos.listw = nb2listw(bos.nb)
+  
+  plot(bos.nb,coords)
+  box()
+  title(main="Spatial weights using Kth Nearest Neighbour")
+```
+
+**Moran's I with correction for model residuals**
+```{r results='show', echo=TRUE, warning=FALSE}  
+  lm.morantest(lm.r, bos.listw)
+```
+<br>
+This results show that the residuals are significantly spatially autocorrelated. So, we can see that there is high spatial autocorrelation in the model as given by Moran's I, which needs to be removed and modeled.
+<br>
+<br>
+**Selection of spatial regression model**
+<br>
+Lagrange multiplier test
+<br>
+This test can checkif the autocorrelation is in dependent variables or in its errors which helps to choose which spatial regression model to use.
+<br>
+We first use non-robust version of the test.
+<br>
+```{r results='show', echo=TRUE, warning=FALSE}  
+  summary(lm.LMtests(lm.r, bos.listw, test=c("LMerr","LMlag")))
+```
+<br>
+The results indicate that both are significant. So, we perform a robust version of LMtest.
+<br>
+```{r results='show', echo=TRUE, warning=FALSE}  
+  summary(lm.LMtests(lm.r, bos.listw, test=c("RLMerr","RLMlag")))
+```
+<br>
+Still, the results indicate both are significant.So, we test both the models.
+<br>
+**Spatial Lag Model**
+```{r results='show', echo=TRUE, warning=FALSE} 
+bos.fit.sp_lag = lagsarlm (logT_CMEDV ~ . , data=Boston, bos.listw)
+  summary(bos.fit.sp_lag)
+```
+<br>
+The summary of this spatial lag model gives estimates of coefficients which make sense, with significant rho coefficient, athough its value is only about 0.6. AIC shows decrease from -126.16 to -367.33 which shows more information is acquired from the spatial model than the linear model. But a LM test on residuals to look for autocorrelation shows significant autocorrelation still present on residuals. Thus, this model is not satisfactory and so I will test spatial error model.
+<br>
+**Spatial Error Model**
+```{r results='show', echo=TRUE, warning=FALSE} 
+bos.fit.sp_err = errorsarlm (logT_CMEDV ~ . , data=Boston, bos.listw)
+  summary(bos.fit.sp_err)
+```
+<br>
+The summary of spatial error model shows residuals which are more-or-less even distributed with median at about 0. The coefficients have changed a bit than the linear model. We get lamda which represents the strength of autocorrelation of residuals. The significance test of this strength coefficient indicates that autocorrelation is still a problem in the model.  
+<br>
+In terms of AIC, this model performs better than lag model. But autocorrelation is still a problem in the model.
+<br>
+Since both of these models still contain autocorrelation, I tried the Spatial Durbin Lag model to check if the source of spatial dependency is between dependent variable and neighboring values of independent variable.
+<br>
+Since AIC score was higher in the spatial error model (as well as lower p-value in LM test), I chose to use error version of this model.
+<br><br>
+**Spatial Durbin error Model**
+```{r results='show', echo=TRUE, warning=FALSE} 
+bos.fit.sp_Dur_err = errorsarlm (logT_CMEDV ~ . , data=Boston, bos.listw,
+                                 etype="emixed")
+  summary(bos.fit.sp_Dur_err)
+```
+<br>
+This model also presents serious concerns about remaining autocorrelation with high p-value and large Lambda.
+<br>
+So, I tried it with the spatial durbin lag model
+<br><br>
+**Spatial Durbin lag Model**
+```{r results='show', echo=TRUE, warning=FALSE} 
+bos.fit.sp_Dur_lag = lagsarlm (logT_CMEDV ~ . , data=Boston, bos.listw,
+                                 type="mixed")
+  summary(bos.fit.sp_Dur_lag)
+```
+<br>
+This model has a lower test value for residual autocorrelation but it is still significant since p-value of LM test is below 0.05. The strength of autoregressive coefficeint has increased upto 0.7 and is still significant. There is still spatial autocorrelation in the model.
+<br><br>
+One of the reasons that the model might not be performing well could be some non-normality present in some independent variable (Black Proportion specifically) and binary data (Closeness to river).
+<br>
+So, I tried General Additive Model as my next model with the assumption that relationship between response and predictor maybe non-linear. 
+<br>
+**General Additive Model**
+```{r results='show', echo=TRUE, warning=FALSE} 
+library(mgcv)
+  x = coords[,1]
+  y = coords[,2]
+  bos.gam = gam(logT_CMEDV ~ logT_CRIME + CHAS + NOX +RM +lgtT_AGE +
+                  logT_DIS +B +LSTAT + te(x,y),
+                data=Boston,
+                family = gaussian(link="identity"))
+  summary(bos.gam)
+```
+
+```{r results='show', echo=TRUE, warning=FALSE} 
+nclr = 9
+plotvar = residuals(bos.gam)
+class = classIntervals(plotvar, nclr, style = "pretty")
+plotclr = brewer.pal(nclr, "PRGn")
+colcode = findColours(class, plotclr, digits = 3)
+plot(bos@data$LON,bos@data$LAT,col=colcode,xlim = c(-71.3,-70.75),pch=16,cex=1
+       ,xlab = "Longitude", ylab = "Latitude")
+title(main = "Boston House Prices (GAM residuals)")
+legend("topright", legend = names(attr(colcode,"table")),
+fill = attr(colcode, "palette"))
+```
+
+```{r results='show', echo=TRUE, warning=FALSE} 
+  moran.test(residuals(bos.gam), bos.listw, alternative="two.sided")
+```
+<br>
+Based on the Moran's I test and plot of residuals, we can still see much of autocorrelation not being accounted by the model. 
+<br>
+So, I try again with Spatial filtering approach which uses eigen-analysis of spatial weight matrix. 
+<br><br>
+**Spatial Filtering Approach**
+<br>
+STEP 1: BUild OLS  (Present as lm.r)
+<br>
+STEP 2: Build Spatial Filter
+<br>
+```{r results='show', echo=TRUE, warning=FALSE,cache=F} 
+#sf.err = SpatialFiltering(lm.r, nb= bos.nb, style = "C",
+ #                         alpha=0.25, ExactEV=TRUE, data=Boston)
+attach("xy.RData")
+sf.err
+```
+<br>
+We can plot individual Moran eigenvectors to examine the spatial pattern they represent. The first selected eigenvector is 3.
+<br><br>
+```{r results='show', echo=TRUE, warning=FALSE,cache=T} 
+nclr = 9
+plotvar = sf.err$dataset[,1]
+#plotvar = apply(sf.err$dataset,1,sum)
+class = classIntervals(plotvar, nclr, style = "pretty")
+plotclr = brewer.pal(nclr, "PRGn")
+colcode = findColours(class, plotclr, digits = 3)
+plot(bos@data$LON,bos@data$LAT,col=colcode,xlim = c(-71.3,-70.75),pch=16,cex=1
+       ,xlab = "Longitude", ylab = "Latitude")
+title(main = "Moran eigenvector (4)")
+legend("topright", legend = names(attr(colcode,"table")),
+fill = attr(colcode, "palette"))
+
+nclr = 9
+plotvar = sf.err$dataset[,47]
+#plotvar = apply(sf.err$dataset,1,sum)
+class = classIntervals(plotvar, nclr, style = "pretty")
+plotclr = brewer.pal(nclr, "PRGn")
+colcode = findColours(class, plotclr, digits = 3)
+plot(bos@data$LON,bos@data$LAT,col=colcode,xlim = c(-71.3,-70.75),pch=16,cex=1
+       ,xlab = "Longitude", ylab = "Latitude")
+title(main = "Moran eigenvector (30)")
+legend("topright", legend = names(attr(colcode,"table")),
+fill = attr(colcode, "palette"))
+```
+<br><br>
+This snippet of code outputs the first and last Moran eigenvector which shows the spatial pattern of autocorrelation with highest positive and negative variation. 
+<br>
+```{r results='show', echo=TRUE, warning=FALSE,cache=T} 
+E.sel <- fitted(sf.err)
+lm.sf <- lm(logT_CMEDV ~ logT_CRIME + CHAS + NOX +RM +lgtT_AGE +
+                  logT_DIS +B +LSTAT + E.sel, data=Boston)
+summary(lm.r)
+summary(lm.sf)
+lm.morantest(lm.sf,listw = bos.listw)
+```
+<br>
+Taking the entire set of eigenvectors, the model was built and morantest showed this model to be free from spatial autocorrelation. But since this model has entire 47 eigen vectors, it is difficult to interpret the full model. So, I tried to select the eigen vectors which would remove autocorrelation as shown in MOran's test (cutoff at p-value of I <= 0.05).
+<br><br>
+```{r results='show', echo=TRUE, warning=FALSE,cache=T} 
+ctr = 1
+p_val = 0.04
+p_val_vec = c()
+Eig_vecs = c()
+while (p_val<0.05){
+  E.sel <- fitted(sf.err)[,1:ctr]
+  lm.sf <- lm(logT_CMEDV ~ logT_CRIME + CHAS + NOX +RM +lgtT_AGE +
+                  logT_DIS + LSTAT +B + E.sel, data=Boston)
+  lm_mor_test = lm.morantest(lm.sf,listw = bos.listw)
+  p_val = as.numeric(lm_mor_test$p.value)
+  p_val_vec = c(p_val_vec,p_val)
+  Eig_vecs = c(Eig_vecs,attributes(E.sel)$dimnames[[2]][ctr])
+  ctr = ctr +1
+  if (ctr == 47) {p_val = 0.06}
+}
+summary(lm.sf)
+(lm_mor_test)
+#p_val_vec
+#Eig_vecs
+plot(1:length(p_val_vec),p_val_vec,"b",cex=0.5, xlab = "Eigen Vectors included \n in model", ylab = "P-value of Moran's I")
+abline(h=0.05,col=2, lty =2)
+abline(h=0.01,col=3,lty = 2)
+length(which(p_val_vec<0.01))
+```
+<br> <br>
+This results show that almost all (45 out of 47) eigen values are required to filter out the spatial autocorrelation so that the final model does not have spatial autocorrelation. Even if we consider a significant autocorrelation at only 0.01 significance of Moran's I value, the model does not change a lot (in terms of Eigen vectors in the model). 
+
+<br><br>
+So, Finally, I tried the Geographically Weighted Regression with adaptive window selection since the points are concentrated at some areas and sparse at others.
+<br>
+```{r results='show', echo=TRUE, warning=FALSE,cache=T} 
+library(spgwr)
+bos.bw = gwr.sel(log(CMEDV) ~ CRIM + CHAS + NOX + RM + AGE + DIS + B + LSTAT, data=bos, adapt = TRUE, method = "cv",
+                 verbose=TRUE)
+
+bos.bw
+print(dim(bos)[1] * bos.bw)
+```
+<br>
+Each window takes about 12 points
+<br>
+```{r results='show', echo=TRUE, warning=FALSE,cache=T} 
+bos.gwr<-gwr(log(CMEDV) ~ CRIM + CHAS + NOX + RM + AGE + DIS + B + LSTAT,
+data= bos, adapt = bos.bw, gweight = gwr.Gauss,
+hatmatrix = TRUE)
+print(bos.gwr)
+```
+<br>
+Multiple local models are formed. A range of values for coefficients are produced which shows chanigng relationship in space. Some relationships (e.g. NOX) changes form -3.0 to 2.0 based on the location. 
+<br>
+AIC value is -699 which is higher than any of the any model built previously.
+<br>
+The overall R-squared is shown to be 0.93
+<br>
+
+```{r results='show', echo=TRUE, warning=FALSE,cache=T} 
+nclr <- 9
+plotvar <- bos.gwr$SDF$localR2
+class <- classIntervals(plotvar, nclr, style = "pretty")
+plotclr <- brewer.pal(nclr, "Blues")
+colcode <- findColours(class, plotclr, digits = 3)
+plot(bos@data$LON,bos@data$LAT,col=colcode,xlim = c(-71.3,-70.75),pch=16,cex=1
+       ,xlab = "Longitude", ylab = "Latitude")
+title(main = "Local R2 from GWR")
+legend("topright", legend = names(attr(colcode,"table")),
+fill = attr(colcode, "palette"), ncol=1)
+```
+<br>
+The R-squared value plotted shows that R-squared value changes from 0.6 to 0.95 at some places.
+<br>
+```{r results='show', echo=TRUE, warning=FALSE,cache=T}
+layout(matrix(c(1:2), 1, 2, byrow = TRUE))
+for (i in 4:11){
+nclr <- 9
+plotvar_ <- bos.gwr$SDF[,i]
+plotvar = plotvar_@data[,1]
+class <- classIntervals(plotvar, nclr, style = "pretty")
+plotclr <- brewer.pal(nclr, "YlOrRd")
+colcode <- findColours(class, plotclr, digits = 3)
+plot(bos@data$LON,bos@data$LAT,col=colcode,xlim = c(-71.3,-70.6),pch=16,cex=1
+       ,xlab = "Longitude", ylab = "Latitude")
+title(main = paste ("Coeff for ",vars_selected[i-2],sep=""))
+legend("topright", legend = names(attr(colcode,"table")),
+fill = attr(colcode, "palette"), ncol=1,cex=0.6)
+}
+par(def.par)
+```
+<br>
+Looking at the coeff figures, we can see which local area have most effect on house values from the dependent variable. e.g there is a small area on the top right where crime rates have an enormous effect on House values. In this small region, a small increase in crime rate would decrease house values drastically. 
+<br>
+So, this model has local model and has included the spatial correlation into something meaningful.
+<br>
+I would believe the direction (positive or negative) of coefficients from any spatial lag or error model and use this GWR to see where the model has higher chances of performing well.
+<br>
