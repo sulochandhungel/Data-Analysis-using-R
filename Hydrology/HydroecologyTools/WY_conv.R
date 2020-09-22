@@ -1,8 +1,12 @@
-WY_conv.R=function(USGSdata)
+WY_conv.R=function(USGSdata, ncol_ = 4)
 {
+leap_yr_days.R = function (yr){
+	if ((yr%%400 == 0 || (yr%%100 !=0 && yr%%4==0))){days=366} else {days=365}
+	days
+}
 	data=USGSdata
-	theDate=as.Date(data$V3)	## Date
-	theDailyFlow=data$V4		## Discharge
+	theDate=as.Date(data$Date)	## Date
+	theDailyFlow=data[,ncol_]		## Discharge
 	yr=as.numeric(format(theDate,"%Y")) ## Extracting years 
 	mo=as.numeric(format(theDate,"%m")) ## Extracting Months
 	lenofdata=length(yr) ## Length of Data
@@ -143,6 +147,22 @@ WY_conv.R=function(USGSdata)
 			WYmat[1:daysinWY,i]=flow2
 		}
 	}
-WYmat[WYmat=="Ice"]=NA
-WYmat
+WYmat1 = WYmat
+leap_ = unlist(lapply(as.numeric(colnames(WYmat1)), FUN=leap_yr_days.R)) == 366
+WYs = as.numeric(colnames(WYmat1))
+feb_days = rep(28,length(WYs))
+feb_days[leap_] = 29
+until_feb_leap = difftime(strptime(paste(WYs, "-02-",feb_days, sep=""), format = "%Y-%m-%d", tz = "GMT"),
+				  strptime(paste(WYs-1, "-10-01", sep=""), format = "%Y-%m-%d", tz = "GMT")) + 1
+WYmat2 = WYmat1
+WYmat2[,] = NA
+for (i in 1:length(WYs)){
+	rows_ = c((1:until_feb_leap[i]),(153:366))
+	WYmat2[c((1:until_feb_leap[i]),(153:366)),i] = WYmat1[1:length(rows_),i]
+}
+
+rownames(WYmat2) = format(seq(from = as.Date("1903-10-01"),to = as.Date("1904-09-30"), by = "1 day"), "%m-%d")
+
+WYmat2[WYmat2=="Ice"]=NA
+WYmat2
 }
