@@ -2,4 +2,6 @@ This R code creates a profile plot across flow lines for HEC-HMS modeling and pr
 
 This is the screenshot of the result.
 
+![alt text](https://github.com/sulochandhungel/Data-Analysis-using-R/Hydrology/TerrainPlot/image.jpg?raw=true)
+
 
