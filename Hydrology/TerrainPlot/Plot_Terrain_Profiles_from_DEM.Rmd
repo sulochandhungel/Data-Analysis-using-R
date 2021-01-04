@@ -1,0 +1,316 @@
+```{r}
+## How to prepare the shpaefile for this functions?
+# (1) Draw the XS line with the same projection as longest flow path. [Hint: Copy Longest Flow Path and delete all line and draw XS.] MAKE SURE THAT LENGTHS ARE LONGER THAN 50 ft
+# (2) Use interpolate shape tool to create a 3D line using terrain at around 2-5 ft sampling
+# (3) Use "Spatial Join (Analysis)" Tool  with LongestFlowPath
+# (4) Use "Spatial Join (Analysis)" Tool with RoutingLines
+# (5) Use "Intersect (Analysis)" Tool with watersheds.
+# (6) Turn off unnecessary fields and make sure to have at least these three fields:
+###### (I) Name - watershed name
+###### (II) FlowType - If its channel, shallow or sheet
+###### (III) RoutingLineName
+
+
+## TO use this function first use "Spatial Join (Analysis)" Tool in Arcmap with LongestFlowPath and RoutingLines
+## THIS IS to get flowtype and routing line name.
+## Then perform an intersect with watersheds to get the watershed name
+
+
+get_extent = function(shpfile_name, i, GEOG = FALSE){
+  library(shapefiles)
+  library(maptools)
+  #install.packages("rgdal")
+  library(rgdal)
+  library(sf)
+
+  shpline1 = st_read(shpfile_name)#"C:/Users/sulochan.dhungel/Sulochan/Trainings Readings Toolboxes Codes/R codes/Washington County/int_line.shp")
+  if (GEOG) {
+    shpline = st_transform(shpline1, "+proj=longlat +ellps=WGS84 +datum=NAD83")  
+  } else {
+    shpline = shpline1
+  }
+  
+  geom1 = st_geometry(shpline)[i]
+  xx = (st_coordinates(geom1))
+
+  xmin = min(xx[,1])
+  xmax = max(xx[,1])
+  nx = length(xx[,1])
+
+  ymin = min(xx[,2])
+  ymax = max(xx[,2])
+  ny = length(xx[,2])
+
+  extent_ = c(xmin, xmax, ymin, ymax)
+  return (extent_)
+}
+
+shpfile_name = "Q:/Projects/FEMA/Washington_County/400 - Technical/Phase 2/Hydrology/Springdale_Tribs/Support/Channel_XS_line_Joined_LFP_RoutLine_int.shp"
+  #"C:/Users/sulochan.dhungel/Sulochan/Trainings Readings Toolboxes Codes/R codes/Washington County/int_line.shp"
+get_extent(shpfile_name, 2, GEOG = TRUE)
+
+conv_proj2geog  = function(proj_coords, shpfile_name){
+  
+  
+}
+
+```
+
+
+
+```{r}
+library(shapefiles)
+library(maptools)
+#install.packages("rgdal")
+library(rgdal)
+library(sf)
+library(raster)
+
+library(ggmap)
+library(ggplot2)
+library(ggsn)
+
+def.par <- par(no.readonly = TRUE)
+pdf("Q:/Projects/FEMA/Washington_County/400 - Technical/Phase 2/Hydrology/Springdale_Tribs/Support/check.pdf")
+
+
+ras_terr = raster("Q:/Projects/FEMA/Washington_County/400 - Technical/Phase 2/Hydrology/Springdale_Tribs/Archive/Data/TauDEM/Springdale_Clip_Burn_.tif")
+streamLine = st_read("Q:/Projects/FEMA/Washington_County/400 - Technical/Phase 2/Hydrology/Springdale_Tribs/Data/SpringDale_FlowLengths.shp")
+RoutingLine = st_read("Q:/Projects/FEMA/Washington_County/400 - Technical/Phase 2/Hydrology/Springdale_Tribs/Data/SpringDale_RoutingLines.shp")
+Wsheds = st_read("Q:/Projects/FEMA/Washington_County/400 - Technical/Phase 2/Hydrology/Springdale_Tribs/Data/Springdale_wshed.shp")
+
+shpline = st_read("Q:/Projects/FEMA/Washington_County/400 - Technical/Phase 2/Hydrology/Springdale_Tribs/Support/Channel_XS_line_Joined_LFP_RoutLine_int.shp")
+all_shp_names = levels(shpline$Name)[shpline$Name]
+all_shp_ids = shpline$Id
+all_FlowType = levels(shpline$FlowType)[shpline$FlowType]
+all_RoutingIDs= levels(shpline$RoutingLin)[shpline$RoutingLin]
+
+shpline_ll = st_transform(shpline, "+proj=longlat +ellps=WGS84 +datum=NAD83")
+
+
+for (shp_num in 1:dim(shpline)[1]){
+  shp_name = paste(all_shp_names[shp_num], "_", all_shp_ids[shp_num], "\n ", all_FlowType[shp_num], "_", all_RoutingIDs[shp_num],  sep ='')
+
+  geom1_ll = st_geometry(shpline_ll)[shp_num]
+  xx = (st_coordinates(geom1_ll))
+  xx_df = data.frame(xx)
+  xx_df_pts = data.frame(xx[c(seq(1, dim(xx)[1], 50)), ])
+  #xx_df = st_as_sf(x = data.frame(xx), coords = c("X", "Y"), crs =  "+proj=longlat +ellps=WGS84 +datum=NAD83")
+
+  stmap = ggmap(get_map(location = c(mean(xx[,1]),mean(xx[,2])), zoom = 19, maptype = "hybrid", source = "google"))
+
+  x_lim <- stmap$data[c(1, 4), 1] * c(1, 1)#.9998)
+  y_lim <- stmap$data[c(1, 4), 2] * c(1,1)#1.003, 1)
+
+  myplot = stmap + geom_path(data  = xx_df, aes(X, Y)) +
+      geom_point(data  = xx_df_pts[1,], aes(X, Y), shape = 16, size = 2, col = 'red') +
+    geom_point(data  = xx_df_pts, aes(X, Y), shape = 16, size = 1, col = 'green') + 
+    annotate("text", x = xx_df_pts$X, y = xx_df_pts$Y, label = seq(0, (dim(xx_df_pts)[1]-1)*50, 50), size = 4, hjust = 1, col = "red") + ggtitle(shp_name)
+  print (myplot)
+  
+  layout(matrix(c(1,2,3,4), 2, 2, byrow = TRUE))
+  plot(st_geometry(Wsheds), main = shp_name)
+  plot(st_geometry(streamLine),col = 'lightblue', add = T)
+  plot(st_geometry(RoutingLine),col = 'blue', lty = 1.5, add = T)
+  
+  geom1 = st_geometry(shpline)[shp_num]
+  plot(geom1, add = T, lwd = 6, col = 'red')
+  
+  xx = (st_coordinates(geom1))
+  
+  dists_y2 = (xx[,2][2:length(xx[,2])] - xx[,2][1:(length(xx[,2]) - 1)])^2 
+  dists_x2 = (xx[,1][2:length(xx[,1])] - xx[,1][1:(length(xx[,1]) - 1)])^2 
+  dists = c(0,cumsum(sqrt(dists_x2 + dists_y2)))
+  heights = xx[,3]
+  plot(dists, heights, 'l', lwd = 2, main = shp_name)
+  dists_org = dists
+  heights_org = heights  
+  
+  grid()
+  for (ht_i in 1:10000){abline(h = ht_i, lty = 2, col = 'lightgray')}
+  
+  ## FOR RIGHT
+  x_max = max(dists)
+  y_max = max(heights)
+
+  min_height = min(heights)
+  min_height_ind = which(heights == min_height)
+  if (length(min_height_ind) == 1) {
+    dist_center = dists[min_height_ind]
+  } else {
+    dist_center = dists[min_height_ind[round(length(min_height_ind)/2)]]  
+  }
+  dist_center_org = dist_center
+ 
+  
+  for (slp in c(0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1, 2, 5, 100)){
+    intercept_c = min_height - (slp * dist_center)
+    abline(intercept_c, slp, lty = 2, col = 'gray', lwd = 1)
+    y_ = (slp *x_max) + intercept_c
+    x_ = (y_max - intercept_c)/slp
+
+    if (y_ > y_max) {y_ = y_max}
+    if (x_ > x_max) {x_ = x_max}
+  
+    text(x_, y_, slp, col = 'darkgray', font = 2, cex = 0.5)#, srt = 45)#rad2deg(atan(slp)))
+  }
+
+  ## FOR LEFT
+  x_min = min(dists)
+  y_max = max(heights)
+
+  for (slp in c(0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1, 2, 5, 100)){
+    slp = slp*-1
+    intercept_c = min_height - (slp * dist_center)
+    abline(intercept_c, slp, lty = 2, col = 'gray', lwd = 1)
+    y_ = (slp *x_min) + intercept_c
+    x_ = (y_max - intercept_c)/slp
+
+    if (y_ > y_max) {y_ = y_max}
+    if (x_ < x_min) {x_ = x_min}
+  
+    text(x_, y_, slp*-1, col = 'darkgray', font=2, cex = 0.5)#, srt = 45)#rad2deg(atan(slp)))
+  }
+  lines(dists, heights, 'l', lwd = 2)
+
+  
+  
+  
+  dist_center_minus_100ft = dist_center - 50
+  dist_center_plus_100ft = dist_center + 50
+
+  ind_for_small_plot = which(dists_org> dist_center_minus_100ft & dists_org< dist_center_plus_100ft)
+  dists_small = dists_org[ind_for_small_plot]
+  heights_small = heights_org[ind_for_small_plot]
+
+  dists = dists_small
+  heights = heights_small
+
+  plot(dists, heights, 'l', lwd = 2)#, main = shp_name)
+  grid()
+  for (ht_i in 1:10000){abline(h = ht_i, lty = 2, col = 'lightgray')}
+  
+  min_height = min(heights)
+  min_height_ind = which(heights == min_height)
+  if (length(min_height_ind) == 1) {
+    dist_center = dists[min_height_ind]
+  } else {
+    dist_center = dists[min_height_ind[round(length(min_height_ind)/2)]]  
+  }
+  
+  
+
+  ## FOR RIGHT
+  x_max = max(dists)
+  y_max = max(heights)
+
+  for (slp in c(0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1, 2, 5, 100)){
+    intercept_c = min_height - (slp * dist_center)
+    abline(intercept_c, slp, lty = 2, col = 'gray', lwd = 1)
+    y_ = (slp *x_max) + intercept_c
+    x_ = (y_max - intercept_c)/slp
+
+    if (y_ > y_max) {y_ = y_max}
+    if (x_ > x_max) {x_ = x_max}
+  
+    text(x_, y_, slp, col = 'darkgray', font = 2, cex = 0.5)#, srt = 45)#rad2deg(atan(slp)))
+  }
+
+  ## FOR LEFT
+  x_min = min(dists)
+  y_max = max(heights)
+
+  for (slp in c(0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1, 2, 5, 100)){
+    slp = slp*-1
+    intercept_c = min_height - (slp * dist_center)
+    abline(intercept_c, slp, lty = 2, col = 'gray', lwd = 1)
+    y_ = (slp *x_min) + intercept_c
+    x_ = (y_max - intercept_c)/slp
+
+    if (y_ > y_max) {y_ = y_max}
+    if (x_ < x_min) {x_ = x_min}
+  
+    text(x_, y_, slp*-1, col = 'darkgray', font=2, cex = 0.5)#, srt = 45)#rad2deg(atan(slp)))
+  }
+  lines(dists, heights, 'l', lwd = 2)
+  axis(3, at = dists[seq(1, length(dists), 5)], labels = round(dists - min(dists))[seq(1, length(dists), 5)])
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  dist_center_minus_100ft = dist_center_org - 15
+  dist_center_plus_100ft = dist_center_org + 15
+
+  ind_for_small_plot = which(dists_org> dist_center_minus_100ft & dists_org< dist_center_plus_100ft)
+  dists_small = dists_org[ind_for_small_plot]
+  heights_small = heights_org[ind_for_small_plot]
+
+  dists = dists_small
+  heights = heights_small
+
+  plot(dists, heights, 'l', lwd = 2)#, main = shp_name)
+  grid()
+  for (ht_i in 1:10000){abline(h = ht_i, lty = 2, col = 'lightgray')}
+  
+  min_height = min(heights)
+  min_height_ind = which(heights == min_height)
+  if (length(min_height_ind) == 1) {
+    dist_center = dists[min_height_ind]
+  } else {
+    dist_center = dists[min_height_ind[round(length(min_height_ind)/2)]]  
+  }
+  
+  
+
+  ## FOR RIGHT
+  x_max = max(dists)
+  y_max = max(heights)
+
+  for (slp in c(0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1, 2, 5, 100)){
+    intercept_c = min_height - (slp * dist_center)
+    abline(intercept_c, slp, lty = 2, col = 'gray', lwd = 1)
+    y_ = (slp *x_max) + intercept_c
+    x_ = (y_max - intercept_c)/slp
+
+    if (y_ > y_max) {y_ = y_max}
+    if (x_ > x_max) {x_ = x_max}
+  
+    text(x_, y_, slp, col = 'darkgray', font = 2, cex = 0.5)#, srt = 45)#rad2deg(atan(slp)))
+  }
+
+  ## FOR LEFT
+  x_min = min(dists)
+  y_max = max(heights)
+
+  for (slp in c(0.01, 0.03, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1, 2, 5, 100)){
+    slp = slp*-1
+    intercept_c = min_height - (slp * dist_center)
+    abline(intercept_c, slp, lty = 2, col = 'gray', lwd = 1)
+    y_ = (slp *x_min) + intercept_c
+    x_ = (y_max - intercept_c)/slp
+
+    if (y_ > y_max) {y_ = y_max}
+    if (x_ < x_min) {x_ = x_min}
+  
+    text(x_, y_, slp*-1, col = 'darkgray', font=2, cex = 0.5)#, srt = 45)#rad2deg(atan(slp)))
+  }
+  lines(dists, heights, 'l', lwd = 2)
+  axis(3, at = dists[seq(1, length(dists), 5)], labels = round(dists - min(dists))[seq(1, length(dists), 5)])
+  
+  
+  
+  #plot(0,type='n',axes=FALSE,ann=FALSE)
+}
+
+dev.off()
+
+```
+
+
+
+
